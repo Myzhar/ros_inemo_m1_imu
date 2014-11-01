@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package>
+  <name>st_inemo_m1_imu</name>
+  <version>0.1.0</version>
+  <description>ROS Package to connect to ST iNemo Discovery board</description>
+
+  <author email="myzhar@robot-home.it">Walter 'Myzhar' Lucetti</author>
+
+  <maintainer email="myzhar@robot-home.it">Walter 'Myzhar' Lucetti</maintainer>
+
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>serial</build_depend>
+  <build_depend>std_msgs</build_depend>
+
+  <run_depend>serial</run_depend>
+  <run_depend>std_msgs</run_depend>
+</package>
