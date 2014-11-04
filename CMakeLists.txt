@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 2.8.8)
 
 project(st_inemo_m1_imu)
 
@@ -13,6 +13,18 @@ catkin_package(
     serial
     std_msgs
 )
+
+#########################################################
+# Qt5
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
+find_package(Qt5Core REQUIRED)
+
+#include_directories(${Qt5Core_INCLUDES})
+#add_definitions(${Qt5Core_DEFINITIONS})
+#set(CMAKE_CXX_FLAGS "${Qt5Core_EXECUTABLE_COMPILE_FLAGS}")
+#########################################################
 
 #########################################################
 # INCLUDES
@@ -43,8 +55,12 @@ add_executable(
 	${inemo_m1_INC_SRC}
 )
 
+qt5_use_modules(inemo_m1_node Core)
+
 target_link_libraries(
 	inemo_m1_node
   	${catkin_LIBRARIES}
 )
+
+
 #########################################################
