@@ -1,6 +1,5 @@
 #include <inemo_m1_driver.h>
 
-
 namespace inemo
 {
 

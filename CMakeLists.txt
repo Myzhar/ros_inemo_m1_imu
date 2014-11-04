@@ -20,14 +20,14 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(Qt5Core REQUIRED)
-
-#include_directories(${Qt5Core_INCLUDES})
-#add_definitions(${Qt5Core_DEFINITIONS})
-#set(CMAKE_CXX_FLAGS "${Qt5Core_EXECUTABLE_COMPILE_FLAGS}")
 #########################################################
 
 #########################################################
 # INCLUDES
+set(qt_header_path
+     src/driver/include
+)
+
 set(inemo_m1_INC_DIRS
     src/
     src/driver/include/
@@ -42,8 +42,9 @@ include_directories(
 
 #########################################################
 # SOURCES
-set(inemo_m1_INC_SRC
+set(inemo_m1_SRC
     src/inemo_m1_node.cpp
+    src/driver/include/inemo_m1_driver.h # needed to make AUTOMOC work
     src/driver/src/inemo_m1_driver.cpp
 )
 #########################################################
@@ -52,7 +53,7 @@ set(inemo_m1_INC_SRC
 # EXECUTABLE
 add_executable(
 	inemo_m1_node 
-	${inemo_m1_INC_SRC}
+        ${inemo_m1_SRC}
 )
 
 qt5_use_modules(inemo_m1_node Core)
