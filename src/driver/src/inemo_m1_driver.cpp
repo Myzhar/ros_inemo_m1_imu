@@ -1,5 +1,7 @@
 #include <inemo_m1_driver.h>
 
+#include <QMutexLocker>
+
 namespace inemo
 {
 
@@ -22,6 +24,7 @@ CInemoDriver::~CInemoDriver()
 bool CInemoDriver::startIMU()
 {
     // TODO: replace with serial parameters
+
     try
     {
         mSerial.setPort(mSerialPort);
@@ -56,33 +59,54 @@ bool CInemoDriver::stopIMU()
     mStopped = true;
 }
 
+bool CInemoDriver::pauseIMU( bool paused )
+{
+    QMutexLocker locker(mMutex);
+
+    mPaused = paused;
+
+    if(mPaused)
+    {
+        // TODO call iNEMO_Stop_Acquisition to stop data receiving
+    }
+    else
+    {
+         // TODO call iNEMO_Start_Acquisition to restart the data reception
+    }
+}
+
 void CInemoDriver::run()
 {
     mStopped = false;
+    mPaused = false;
     mNoDataCounter = 0;
 
-    ROS_INFO_STREAM( "IMU Data acquring loop started");
+    ROS_INFO_STREAM( "IMU Data acquiring loop started");
 
     while(!mStopped)
     {
         ros::spinOnce(); // Processing ROS messages
 
-        if( mSerial.available() )
+        if(!mPaused)
         {
-            ROS_DEBUG_STREAM("Reading from serial port");
+            if( mSerial.available() )
+            {
+                ROS_DEBUG_STREAM("Reading from serial port");
 
-            string data = mSerial.read(mSerial.available());
+                string data = mSerial.read(mSerial.available());
 
-            ROS_DEBUG_STREAM("Read: " << data);
+                ROS_DEBUG_STREAM("Read: " << data);
 
-            processSerialData( data );
+                processSerialData( data );
+            }
+            else
+            {
+                mNoDataCounter++;
+                ROS_INFO_STREAM( "No IMU data since more than " << mNoDataCounter * mTimeout << " msec" );
+            }
         }
         else
-        {
-            mNoDataCounter++;
-            ROS_INFO_STREAM( "No IMU data since more than " << mNoDataCounter * mTimeout << " msec" );
-        }
-
+            msleep( 10 );
     }
 
     ROS_INFO_STREAM( "IMU Data acquring loop stopped");
