@@ -10,6 +10,8 @@
 
 using namespace std;
 
+#define BUFF_SIZE 64
+
 namespace inemo
 {
 
@@ -85,7 +87,7 @@ protected:
                                 bool& gyro, bool &mag, bool &press, bool& temp,
                                 bool& continousMode, DataFreq& freq, int& sampleCount );
     bool iNEMO_Start_Acquisition(); ///< Starts asynchronous data acquisition according to \ref iNEMO_Set_Output_Mode params
-    bool iNEMO_Stop_Acquisition(); ///< Stops asynchronous data acquisition
+    bool iNEMO_Stop_Acquisition();  ///< Stops asynchronous data acquisition
     bool iNEMO_Get_Acquired_Data(); ///< Request IMU data if asynchronous mode is note active
 
     // <<<<< Acquisition sensor data frames
@@ -99,8 +101,10 @@ protected:
      * to receive ROS commands.
      *
      * \param paused, indicates if the pause is active or not
+     *
+     * \return returns pause status
      */
-    void pauseIMU( bool paused );
+    bool pauseIMU( bool paused );
 
     /*!
      * \brief run
@@ -116,7 +120,7 @@ protected:
      * \param data to be processed
      */
 
-    void processSerialData( string& data );
+    bool processSerialData( string& data );
 
     /*!
      * \brief sendSerialCmd sends a serial frame to iNemo Board
@@ -128,7 +132,7 @@ protected:
      *
      * \return true if success
      */
-    bool sendSerialCmd( quint8 frameControl, quint8 lenght, quint8 messId, QByteArray payload );
+    bool sendSerialCmd(quint8 frameControl, quint8 lenght, quint8 messId, QByteArray &payload );
 
 private:
     ros::NodeHandle m_nh;
@@ -143,6 +147,8 @@ private:
     bool mPaused; ///< Used to pause asynchronous data processing
 
     uint64_t mNoDataCounter;
+
+    uint8_t mSerialBuf[BUFF_SIZE]; ///< Used to store bytes to be sent to serial port
 
     QMutex mMutex;
 };
