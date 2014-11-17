@@ -43,6 +43,9 @@ public:
     bool startIMU();
     bool stopIMU();
 
+    std::string getMsgName( uint8_t msgIdx );
+    std::string getErrorString( uint8_t errIdx );
+
     typedef enum _dataFreq{ freq_1_hz  = 0x00,
                             freq_10_hz = 0x01,
                             freq_25_hz = 0x02,

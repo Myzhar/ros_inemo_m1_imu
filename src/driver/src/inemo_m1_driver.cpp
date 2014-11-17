@@ -10,10 +10,9 @@ CInemoDriver::CInemoDriver() :
 {
     // TODO: add parameters for serial port initialization!!!
 
-    mSerialPort = "/dev/ttyUSB0";
+    mSerialPort = "/dev/ttyACM0";
     mBaudrate = 56000;
-    mTimeout = 100;
-
+    mTimeout = 500;
 }
 
 CInemoDriver::~CInemoDriver()
@@ -30,11 +29,11 @@ bool CInemoDriver::startIMU()
     try
     {
         mSerial.setPort(mSerialPort);
-        mSerial.setBaudrate(mBaudrate);
-        serial::Timeout to = serial::Timeout::simpleTimeout(mTimeout);
-
-        mSerial.setTimeout(to);
         mSerial.open();
+        //mSerial.setBaudrate(mBaudrate);
+
+        serial::Timeout to = serial::Timeout::simpleTimeout(mTimeout);
+        mSerial.setTimeout(to);
     }
     catch (serial::IOException& e)
     {
@@ -53,12 +52,123 @@ bool CInemoDriver::startIMU()
 
     // TODO Configurate IMU before starting acquisition
 
+    mPaused = false;
+    mStopped = true;
+
     return iNEMO_Start_Acquisition();
 }
 
 bool CInemoDriver::stopIMU()
 {
     mStopped = true;
+}
+
+std::string CInemoDriver::getErrorString( uint8_t errIdx )
+{
+    switch( errIdx )
+    {
+    case 0x00:
+        return "Forbidden";
+
+    case 0x01:
+        return "Unsupported command";
+
+    case 0x02:
+        return "Out-of-range value";
+
+    case 0x03:
+        return "Not executable command";
+
+    case 0x04:
+        return "Wrong syntax";
+
+    case 0x05:
+        return "Discovery-M1 not connected";
+
+    default:
+        return "Unknown error";
+    }
+}
+
+std::string CInemoDriver::getMsgName( uint8_t msgIdx )
+{
+    switch(msgIdx)
+    {
+    case 0x00:
+        return "Connect";
+
+    case 0x01:
+        return "Disconnect";
+
+    case 0x02:
+        return "Reset_Board";
+
+    case 0x03:
+        return "Enter_DFU_Mode";
+
+    case 0x07:
+        return "Trace";
+
+    case 0x08:
+        return "Led_Control";
+
+    case 0x10:
+        return "Get_Device_Mode";
+
+    case 0x12:
+        return "Get_MCU_ID";
+
+    case 0x13:
+        return "Get_FW_Version";
+
+    case 0x14:
+        return "Get_HW_Version";
+
+    case 0x15:
+        return "Identify";
+
+    case 0x17:
+        return "Get_AHRS_Library";
+
+    case 0x18:
+        return "Get_Libraries";
+
+    case 0x19:
+        return "Get_Available_Sensors";
+
+    case 0x20:
+        return "Set_Sensor_Parameter";
+
+    case 0x21:
+        return "Get_Sensor_Parameter";
+
+    case 0x22:
+        return "Restore_Default_Parameter";
+
+    case 0x23:
+        return "Save_to_Flash";
+
+    case 0x24:
+        return "Load_from_Flash";
+
+    case 0x50:
+        return "Set_Output_Mode";
+
+    case 0x51:
+        return "Get_Output_Mode";
+
+    case 0x52:
+        return "Acquisition";
+
+    case 0x53:
+        return "Stop_Acquisition";
+
+    case 0x54:
+        return "Get_Acq_Data";
+
+    default:
+        return "Message ID unknown!";
+    }
 }
 
 bool CInemoDriver::pauseIMU( bool paused )
@@ -74,7 +184,7 @@ bool CInemoDriver::pauseIMU( bool paused )
     }
     else
     {
-         // TODO call iNEMO_Start_Acquisition to restart the data reception
+        // TODO call iNEMO_Start_Acquisition to restart the data reception
         reply = iNEMO_Start_Acquisition();
     }
 
@@ -144,6 +254,10 @@ bool CInemoDriver::sendSerialCmd( quint8 frameControl, quint8 lenght, quint8 mes
     if(payload.size()>0)
         memcpy( &mSerialBuf[3], payload.data(), payload.size() );
 
+    ROS_INFO_STREAM( "Written " << dataSize+3 << "bytes" );
+    for( int i=0; i< dataSize+3; i++ )
+        ROS_INFO_STREAM( "[" << i << "]" << std::hex << " 0x" << (short int)mSerialBuf[i] );
+
     int written = mSerial.write( mSerialBuf, dataSize+3 );
     if ( written != dataSize+3 )
     {
@@ -175,6 +289,7 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
     quint8 messId = 0x52;
     QByteArray payload; // No data!
 
+
     if( sendSerialCmd( frameControl, lenght, messId, payload ) )
     {
         if( !mSerial.waitReadable() )
@@ -184,6 +299,10 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
         }
 
         string reply = mSerial.read( mSerial.available() );
+
+        ROS_DEBUG_STREAM( "\rReceived " << reply.size() << "bytes" );
+        for( int i=0; i< reply.size(); i++ )
+            ROS_INFO_STREAM( "[" << i << "]" << std::setw(2) << std::hex << std::showbase << (short int)reply.at(i) );
 
         if( reply.size() < 3 )
         {
@@ -207,11 +326,11 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
 
         if( frameControl == 0xC0 && lenght==0x02 && messId == 0x52 )
         {
-            ROS_ERROR_STREAM( "Received NACK: IMU acquisition not started. Error code: " << reply.data()[3] );
+            ROS_ERROR_STREAM( "Received NACK: IMU acquisition not started. Error code: " << std::hex << reply.data()[3] );
             return false;
         }
 
-        ROS_ERROR_STREAM( "Received unknown frame" );
+        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         return false;
     }
 
