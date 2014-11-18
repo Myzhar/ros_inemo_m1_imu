@@ -2,6 +2,9 @@
 
 #include <QMutexLocker>
 
+#define BIT(i) (1 << (i))
+#define BIT_TEST(n, i) (((n) & BIT(i)) >> (i))
+
 namespace inemo
 {
 
@@ -13,6 +16,8 @@ CInemoDriver::CInemoDriver() :
     mSerialPort = "/dev/ttyACM0";
     mBaudrate = 56000;
     mTimeout = 500;
+
+    mConnected = false;
 }
 
 CInemoDriver::~CInemoDriver()
@@ -24,7 +29,7 @@ bool CInemoDriver::startIMU()
 {
     // TODO: replace with serial parameters
 
-    ROS_INFO_STREAM( "Starting data acquisition" );
+    ROS_INFO_STREAM( "Opening serial port " << mSerialPort );
 
     try
     {
@@ -50,17 +55,43 @@ bool CInemoDriver::startIMU()
         return false;
     }
 
+    ROS_INFO_STREAM( "Serial port ready" );
+
     // TODO Configurate IMU before starting acquisition
+
+    // >>>>> Disconnection to resolve previous bad stopping
+
+    ROS_INFO_STREAM( "Trying to stop Data Acquisition to solve previously bad interruption of the node"  );
+    stopIMU();
+    // <<<<< Disconnection to resolve previous bad stopping
+
+    if( !iNEMO_Connect() )
+    {
+        return false;
+    }
 
     mPaused = false;
     mStopped = true;
 
-    return iNEMO_Start_Acquisition();
+    if( iNEMO_Start_Acquisition() )
+    {
+        //Thread start
+        start();
+
+        return true;
+    }
+
+    return false;
 }
 
 bool CInemoDriver::stopIMU()
 {
-    mStopped = true;
+    if( iNEMO_Stop_Acquisition() )
+    {
+        mStopped = true;
+
+        iNEMO_Disconnect();
+    }
 }
 
 std::string CInemoDriver::getErrorString( uint8_t errIdx )
@@ -88,6 +119,24 @@ std::string CInemoDriver::getErrorString( uint8_t errIdx )
     default:
         return "Unknown error";
     }
+}
+
+std::string CInemoDriver::getFrameType( uint8_t ctrlByte)
+{
+    bool bit_7 = BIT_TEST( ctrlByte, 7 );
+    bool bit_6 = BIT_TEST( ctrlByte, 6 );
+
+    if( !bit_7 && !bit_6 )
+        return "Control";
+
+    if( !bit_7 && bit_6 )
+        return "Data";
+
+    if( bit_7 && !bit_6 )
+        return "Ack";
+
+    if( bit_7 && bit_6 )
+        return "Nack";
 }
 
 std::string CInemoDriver::getMsgName( uint8_t msgIdx )
@@ -207,16 +256,17 @@ void CInemoDriver::run()
 
         if(!mPaused)
         {
-            //if( mSerial.available() )
             if( mSerial.waitReadable() )
             {
-                ROS_DEBUG_STREAM("Reading from serial port");
+                ROS_INFO_STREAM("Reading from serial port");
 
-                string data = mSerial.read(mSerial.available());
+                string serialData = mSerial.read(mSerial.available());
 
-                ROS_DEBUG_STREAM("Read: " << data);
-
-                processSerialData( data );
+                iNemoFrame frame;
+                if( processSerialData( serialData, &frame ) )
+                {
+                    ROS_INFO_STREAM( "Data counter: " << (int)frame.mPayload[1] + (int )frame.mPayload[0]*256 );
+                }
             }
             else
             {
@@ -231,41 +281,185 @@ void CInemoDriver::run()
     ROS_INFO_STREAM( "IMU Data acquring loop stopped");
 }
 
-bool CInemoDriver::processSerialData( string& data )
+bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
 {
-    // TODO Process iNEMO_Acquisition_Data message
-    // to extract attitude and quaternion
-}
-
-bool CInemoDriver::sendSerialCmd( quint8 frameControl, quint8 lenght, quint8 messId, QByteArray& payload )
-{
-    int dataSize = payload.size();
-
-    if( lenght != dataSize+1 )
+    if( serialData.size() <3 && serialData.size()>64 )
     {
-        ROS_ERROR_STREAM( "Message lenght is wrong. Espected " << dataSize+1 << " received " << lenght );
+        ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << serialData.size() << " bytes" );
         return false;
     }
 
-    mSerialBuf[0] = frameControl;
-    mSerialBuf[1] = lenght;
-    mSerialBuf[2] = messId;
+    outFrame->mControl = (uint8_t)serialData.data()[0];
+    outFrame->mLenght = (uint8_t)serialData.data()[1];
+    outFrame->mId = (uint8_t)serialData.data()[2];
 
-    if(payload.size()>0)
-        memcpy( &mSerialBuf[3], payload.data(), payload.size() );
-
-    ROS_INFO_STREAM( "Written " << dataSize+3 << "bytes" );
-    for( int i=0; i< dataSize+3; i++ )
-        ROS_INFO_STREAM( "[" << i << "]" << std::hex << " 0x" << (short int)mSerialBuf[i] );
-
-    int written = mSerial.write( mSerialBuf, dataSize+3 );
-    if ( written != dataSize+3 )
+    if(outFrame->mLenght > 126)
     {
-        ROS_ERROR_STREAM( "Serial write error. Written " << written << " bytes instead of" << dataSize+3 << " bytes.");
+        ROS_ERROR_STREAM( "The 'lenght' byte is not correct. Value:" << (int)outFrame->mLenght );
+        return false;
+    }
+
+    if( outFrame->mLenght>1 )
+    {
+        memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-1 );
+    }
+
+    ROS_INFO_STREAM( "Frame received:" );
+    ROS_INFO_STREAM( "Control:      0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mControl << " - " << getFrameType( outFrame->mControl ) );
+    ROS_INFO_STREAM( "Lenght:       0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mLenght );
+    ROS_INFO_STREAM( "Message Id:   0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mId << " - " << getMsgName( outFrame->mId ) );
+    ROS_INFO_STREAM( "Payload size: " << outFrame->mLenght-1 );
+
+    return true;
+}
+
+bool CInemoDriver::sendSerialCmd( iNemoFrame &frame )
+{
+    mSerialBuf[0] = frame.mControl;
+    mSerialBuf[1] = frame.mLenght;
+    mSerialBuf[2] = frame.mId;
+
+    int dataSize = frame.mLenght+2;
+
+    if(frame.mLenght > 1)
+        memcpy( &mSerialBuf[3], frame.mPayload, frame.mLenght-1 );
+
+    ROS_DEBUG_STREAM( "To be written " << dataSize << " bytes" );
+    for( int i=0; i<dataSize; i++ )
+        ROS_DEBUG_STREAM( "[" << i << "]" << std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)mSerialBuf[i] );
+
+    int written = mSerial.write( mSerialBuf, dataSize );
+    if ( written != dataSize )
+    {
+        ROS_ERROR_STREAM( "Serial write error. Written " << written << " bytes instead of" << dataSize << " bytes.");
         return false;
     }
 
     return true;
+}
+
+bool CInemoDriver::iNEMO_Connect()
+{
+    ROS_INFO_STREAM( "Sending 'iNEMO_Connect' frame to iNemo");
+
+    if(!mSerial.isOpen())
+    {
+        ROS_INFO_STREAM( "Cannot connect, serial port non opened");
+        return false;
+    }
+
+    if( mConnected )
+    {
+        ROS_ERROR_STREAM( "Board is connected. Command ignored");
+        return false;
+    }
+
+    mConnected = false;
+
+    iNemoFrame frame;
+    frame.mControl = 0x20;
+    frame.mLenght = 0x01;
+    frame.mId = 0x00;
+
+    if( sendSerialCmd( frame ) )
+    {
+        if( !mSerial.waitReadable() )
+        {
+            ROS_ERROR_STREAM( "IMU timeout connecting");
+            return false;
+        }
+
+        string reply = mSerial.read( mSerial.available() );
+
+        ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
+        for( int i=0; i< reply.size(); i++ )
+            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+
+        iNemoFrame replyFrame;
+        if( !processSerialData( reply, &replyFrame ) )
+            return false;
+
+        if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x01 && replyFrame.mId == 0x00 )
+        {
+            ROS_INFO_STREAM( "Received ACK: IMU connected");
+
+            mConnected = true;
+            return true;
+        }
+
+        if( replyFrame.mControl == 0xC0 )
+        {
+            uint8_t errorCode = replyFrame.mPayload[0];
+            ROS_ERROR_STREAM( "Received NACK: IMU not connected. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            return false;
+        }
+
+        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        return false;
+    }
+
+    return false;
+}
+
+bool CInemoDriver::iNEMO_Disconnect()
+{
+    ROS_INFO_STREAM( "Stopping eventually running acquisition...");
+
+    iNEMO_Stop_Acquisition();
+
+    ROS_INFO_STREAM( "Sending 'iNEMO_Disconnect' frame to iNemo");
+
+    if(!mSerial.isOpen())
+    {
+        ROS_INFO_STREAM( "Cannot disconnect, serial port non opened");
+        return false;
+    }
+
+    mConnected = false;
+
+    iNemoFrame frame;
+    frame.mControl = 0x20;
+    frame.mLenght = 0x01;
+    frame.mId = 0x01;
+
+    if( sendSerialCmd( frame ) )
+    {
+        if( !mSerial.waitReadable() )
+        {
+            ROS_ERROR_STREAM( "IMU timeout disconnecting");
+            return false;
+        }
+
+        string reply = mSerial.read( mSerial.available() );
+
+        ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
+        for( int i=0; i< reply.size(); i++ )
+            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+
+        iNemoFrame replyFrame;
+        if( !processSerialData( reply, &replyFrame ) )
+            return false;
+
+        if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x01 && replyFrame.mId == 0x00 )
+        {
+            ROS_INFO_STREAM( "Received ACK: IMU disconnected");
+
+            mConnected = true;
+            return true;
+        }
+
+        if( replyFrame.mControl == 0xC0 )
+        {
+            uint8_t errorCode = replyFrame.mPayload[0];
+            ROS_ERROR_STREAM( "Received NACK: IMU not disconnected. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            return false;
+        }
+
+        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        return false;
+    }
+
+    return false;
 }
 
 bool CInemoDriver::iNEMO_Start_Acquisition()
@@ -284,13 +478,12 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
         return false;
     }
 
-    quint8 frameControl = 0x20;
-    quint8 lenght = 0x01;
-    quint8 messId = 0x52;
-    QByteArray payload; // No data!
+    iNemoFrame frame;
+    frame.mControl = 0x20;
+    frame.mLenght = 0x01;
+    frame.mId = 0x52;
 
-
-    if( sendSerialCmd( frameControl, lenght, messId, payload ) )
+    if( sendSerialCmd( frame ) )
     {
         if( !mSerial.waitReadable() )
         {
@@ -300,33 +493,25 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
 
         string reply = mSerial.read( mSerial.available() );
 
-        ROS_DEBUG_STREAM( "\rReceived " << reply.size() << "bytes" );
+        ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
         for( int i=0; i< reply.size(); i++ )
-            ROS_INFO_STREAM( "[" << i << "]" << std::setw(2) << std::hex << std::showbase << (short int)reply.at(i) );
+            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
 
-        if( reply.size() < 3 )
-        {
-            ROS_ERROR_STREAM( "Received incomplete reply starting acquisition");
+        iNemoFrame replyFrame;
+        if( !processSerialData( reply, &replyFrame ) )
             return false;
-        }
 
-        frameControl = reply.data()[0];
-        lenght = reply.data()[1];
-        messId = reply.data()[2];
-
-        if( frameControl == 0x80 && lenght==0x01 && messId == 0x52 )
+        if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x01 && replyFrame.mId == 0x52 )
         {
             ROS_INFO_STREAM( "Received ACK: IMU acquisition started");
-
-            // Start acquisition thread
-            start();
 
             return true;
         }
 
-        if( frameControl == 0xC0 && lenght==0x02 && messId == 0x52 )
+        if( replyFrame.mControl == 0xC0 )
         {
-            ROS_ERROR_STREAM( "Received NACK: IMU acquisition not started. Error code: " << std::hex << reply.data()[3] );
+            uint8_t errorCode = replyFrame.mPayload[0];
+            ROS_ERROR_STREAM( "Received NACK: IMU acquisition not started. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
             return false;
         }
 
@@ -339,7 +524,7 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
 
 bool CInemoDriver::iNEMO_Stop_Acquisition()
 {
-    ROS_INFO_STREAM( "Sending 'iNEMO_Start_Acquisition' frame to iNemo");
+    ROS_INFO_STREAM( "Sending 'iNEMO_Stop_Acquisition' frame to iNemo");
 
     if(!mSerial.isOpen())
     {
@@ -347,52 +532,42 @@ bool CInemoDriver::iNEMO_Stop_Acquisition()
         return false;
     }
 
-    if( !mStopped && !mPaused )
+    iNemoFrame frame;
+    frame.mControl = 0x20;
+    frame.mLenght = 0x01;
+    frame.mId = 0x53;
+
+    if( sendSerialCmd( frame ) )
     {
-        ROS_ERROR_STREAM( "IMU acquisition is stopped, cannot stop it again");
-        return false;
-    }
-
-    quint8 frameControl = 0x20;
-    quint8 lenght = 0x01;
-    quint8 messId = 0x53;
-    QByteArray payload; // No data!
-
-    if( sendSerialCmd( frameControl, lenght, messId, payload ) )
-    {
-        if( !mSerial.waitReadable() )
+        while( mSerial.waitReadable() )
         {
-            ROS_ERROR_STREAM( "IMU timeout stopping acquisition");
-            return false;
+            string reply = mSerial.read( mSerial.available() );
+
+            ROS_DEBUG_STREAM( "Received " << reply.size() << "bytes" );
+            for( int i=0; i< reply.size(); i++ )
+                ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (short int)reply.at(i) );
+
+            iNemoFrame replyFrame;
+            processSerialData( reply, &replyFrame );
+
+            if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x01 && replyFrame.mId == 0x53 )
+            {
+                ROS_INFO_STREAM( "Received ACK: IMU acquisition stopping confirmed");
+
+                ROS_INFO_STREAM( "Receiving last data to flush buffer...");
+            }
+
+            if( replyFrame.mControl == 0xC0 )
+            {
+                uint8_t errorCode = replyFrame.mPayload[0];
+                ROS_ERROR_STREAM( "Received NACK: IMU acquisition not stopped. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+                return false;
+            }
+
+            ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         }
 
-        string reply = mSerial.read( mSerial.available() );
-
-        if( reply.size() < 3 )
-        {
-            ROS_ERROR_STREAM( "Received incomplete reply stopping acquisition");
-            return false;
-        }
-
-        frameControl = reply.data()[0];
-        lenght = reply.data()[1];
-        messId = reply.data()[2];
-
-        if( frameControl == 0x80 && lenght==0x01 && messId == 0x53 )
-        {
-            ROS_INFO_STREAM( "Received ACK: IMU acquisition stopped");
-
-            return true;
-        }
-
-        if( frameControl == 0xC0 && lenght==0x02 && messId == 0x53 )
-        {
-            ROS_ERROR_STREAM( "Received NACK: IMU acquisition not stopped. Error code: " << reply.data()[3] );
-            return false;
-        }
-
-        ROS_ERROR_STREAM( "Received unknown frame" );
-        return false;
+        ROS_INFO_STREAM( "Data acquisition stopped");
     }
 
     return false;

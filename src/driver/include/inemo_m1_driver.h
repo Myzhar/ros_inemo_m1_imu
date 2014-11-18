@@ -10,10 +10,23 @@
 
 using namespace std;
 
-#define BUFF_SIZE 64
+#define BUFF_SIZE 128
 
 namespace inemo
 {
+
+/*!
+ * \struct _iNemoFrame
+ *
+ * \brief contains the communication frame (see doc UM1744 cap 1.1)
+ */
+typedef struct _iNemoFrame
+{
+    uint8_t mControl;   ///< Control byte
+    uint8_t mLenght;     ///< Size byte
+    uint8_t mId;        ///< Message id
+    uint8_t mPayload[125];   ///< Frame payload
+} iNemoFrame;
 
 /*!
  * \class CInemoDriver
@@ -43,8 +56,10 @@ public:
     bool startIMU();
     bool stopIMU();
 
+    std::string getFrameType( uint8_t ctrlByte);
     std::string getMsgName( uint8_t msgIdx );
     std::string getErrorString( uint8_t errIdx );
+
 
     typedef enum _dataFreq{ freq_1_hz  = 0x00,
                             freq_10_hz = 0x01,
@@ -61,7 +76,7 @@ protected:
 
     // >>>>> Communication control frames
     bool iNEMO_Connect();
-    void iNEMO_Disconnect();
+    bool iNEMO_Disconnect();
     bool iNEMO_Reset();
     // bool iNEMO_Enter_DFU_Mode(); // Not implemented
     // bool iNEMO_Trace(); // Not implemented
@@ -117,13 +132,16 @@ protected:
     void run() Q_DECL_OVERRIDE;
 
     /*!
-     * \brief processSerialData processes the IMU
-     * data received asynchrounsly.
+     * \brief processSerialData the data read from serial
+     * port and returns the protocol \ref iNemoFrame
      *
-     * \param data to be processed
+     * \param serialData to be processed
+     * \param outFrame the frame extracted from serial buffer
+     *
+     * \return true if the output frame is correct
      */
+    bool processSerialData(string& serialData, iNemoFrame* outFrame );
 
-    bool processSerialData( string& data );
 
     /*!
      * \brief sendSerialCmd sends a serial frame to iNemo Board
@@ -135,7 +153,7 @@ protected:
      *
      * \return true if success
      */
-    bool sendSerialCmd(quint8 frameControl, quint8 lenght, quint8 messId, QByteArray &payload );
+    bool sendSerialCmd( iNemoFrame& frame );
 
 private:
     ros::NodeHandle m_nh;
@@ -145,6 +163,8 @@ private:
     string mSerialPort;
     uint32_t mBaudrate;
     uint32_t mTimeout;
+
+    bool mConnected; ///< indicates if \ref iNEMO_Connect() has been called
 
     bool mStopped; ///< Used to stop the serial processing
     bool mPaused; ///< Used to pause asynchronous data processing
