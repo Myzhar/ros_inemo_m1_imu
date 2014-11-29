@@ -2,6 +2,7 @@
 
 #include <QMutexLocker>
 #include <bitset>
+#include <byteswap.h>
 
 #define BIT(i) (1 << (i))
 #define BIT_TEST(n, i) (((n) & BIT(i)) >> (i))
@@ -305,6 +306,33 @@ bool CInemoDriver::pauseIMU( bool paused )
     return mPaused;
 }
 
+float CInemoDriver::cast_and_swap_float(uint8_t* startAddr)
+{
+    float reply;
+    uint32_t* cast = (uint32_t*)startAddr; // Casting uint8_t to uint32_t
+    uint32_t swapped = bswap_32(*cast); // Swapping bytes and casting to float
+
+    memcpy( &reply, &swapped, sizeof(float));
+
+    return reply;
+}
+
+int16_t CInemoDriver::cast_and_swap_int16( uint8_t* startAddr )
+{
+    uint16_t* cast = (uint16_t*)startAddr; // Casting uint8_t to uint16_t
+    int16_t swapped = (int16_t)bswap_16(*cast); // Swapping bytes and casting to int16_t
+
+    return swapped;
+}
+
+int32_t CInemoDriver::cast_and_swap_int32( uint8_t* startAddr )
+{
+    uint32_t* cast = (uint32_t*)startAddr; // Casting uint8_t to uint32_t
+    int32_t swapped = (int32_t)bswap_32(*cast); // Swapping bytes and casting to int32_t
+
+    return swapped;
+}
+
 void CInemoDriver::run()
 {
     mStopped = false;
@@ -321,7 +349,8 @@ void CInemoDriver::run()
         {
             if( mSerial.waitReadable() )
             {
-                ROS_INFO_STREAM("Reading from serial port");
+                ROS_INFO_STREAM( "---------------------------------" );
+                ROS_INFO_STREAM( "Reading from serial port");
 
                 string serialData = mSerial.read(mSerial.available());
 
@@ -332,51 +361,113 @@ void CInemoDriver::run()
                     {
                         int byteIndex = 0;
 
-                        uint16_t dataCounter = frame.mPayload[byteIndex]*256 + frame.mPayload[byteIndex+1];
+                        uint16_t dataCounter = bswap_16(*(uint16_t*)(&(frame.mPayload[byteIndex]))); // Casting uint8_t to uint16_t and byte swapping
                         ROS_INFO_STREAM( "Data counter: " << dataCounter );
 
                         byteIndex+=2;
 
-                        double accX, accY, accZ;
+                        float accX, accY, accZ;
 
                         if( mAcc )
                         {
-                            int16_t tmpX = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
-                            accX = (double)(tmpX>32767?tmpX-65536:tmpX)/1000.0;
-                            byteIndex+=2;
+                            int16_t valX = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            accX = (float)valX / 1000.0;
 
-                            int16_t tmpY = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
-                            accY = (double)(tmpY>32767?tmpY-65536:tmpY)/1000.0;
-                            byteIndex+=2;
+                            byteIndex+=2; // Next value
 
-                            int16_t tmpZ = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
-                            accZ = (double)(tmpZ>32767?tmpZ-65536:tmpZ)/1000.0;
-                            byteIndex+=2;
+                            int16_t valY = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            accY = (float)valY / 1000.0;
+
+                            byteIndex+=2; // Next value
+
+                            int16_t valZ = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            accZ = (float)valZ / 1000.0;
+
+                            byteIndex+=2; // Next value
 
                             ROS_INFO_STREAM("Accelerations: " << accX << " " << accY << " " << accZ );
-
                         }
 
-                        double gyroX, gyroY, gyroZ;
+                        float gyroX, gyroY, gyroZ;
 
                         if( mGyro )
                         {
-                            int16_t tmpX = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
-                            gyroX = (double)(tmpX>32767?tmpX-65536:tmpX);
-                            byteIndex+=2;
+                            int16_t valX = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            gyroX = (float)valX;
 
-                            int16_t tmpY = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
-                            gyroY = (double)(tmpY>32767?tmpY-65536:tmpY);
-                            byteIndex+=2;
+                            byteIndex+=2; // Next value
 
-                            int16_t tmpZ = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
-                            gyroZ = (double)(tmpZ>32767?tmpZ-65536:tmpZ);
-                            byteIndex+=2;
+                            int16_t valY = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            gyroY = (float)valY;
+
+                            byteIndex+=2; // Next value
+
+                            int16_t valZ = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            gyroZ = (float)valZ;
+
+                            byteIndex+=2; // Next value
 
                             ROS_INFO_STREAM("Rotations: " << gyroX << " " << gyroY << " " << gyroZ );
                         }
 
+                        float magX, magY, magZ;
 
+                        if( mMag )
+                        {
+                            int16_t valX = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            magX = (float)valX / 1000.0;
+
+                            byteIndex+=2; // Next value
+
+                            int16_t valY = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            magY = (float)valY / 1000.0;
+
+                            byteIndex+=2; // Next value
+
+                            int16_t valZ = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            magZ = (float)valZ / 1000.0;
+
+                            byteIndex+=2; // Next value
+
+                            ROS_INFO_STREAM("Magnetic field: " << magX << " " << magY << " " << magZ );
+                        }
+
+                        float pressure;
+                        if( mPress )
+                        {
+                            int32_t val = cast_and_swap_int32( &(frame.mPayload[byteIndex]) );
+                            pressure = (float)val / 100.0;
+
+                            byteIndex+=4; // Next value
+
+                            ROS_INFO_STREAM("Pressuse: " << pressure );
+                        }
+
+                        float temperature;
+                        if( mTemp )
+                        {
+                            int16_t val = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
+                            temperature = (float)val / 10.0;
+
+                            byteIndex+=2; // Next value
+
+                            ROS_INFO_STREAM("Temperature: " << temperature );
+                        }
+
+                        float R,P,Y;
+                        if( mAhrs )
+                        {
+                            R = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
+                            byteIndex+=4; // Next value
+
+                            P = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
+                            byteIndex+=4; // Next value
+
+                            Y = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
+                            byteIndex+=4; // Next value
+
+                            ROS_INFO_STREAM("Roll, Pitch, Yaw: " << R << " " << P << " " << Y );
+                        }
                     }
                 }
             }

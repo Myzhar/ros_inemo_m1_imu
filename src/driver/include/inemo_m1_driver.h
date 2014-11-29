@@ -159,6 +159,12 @@ protected:
     bool sendSerialCmd( iNemoFrame& frame );
 
 private:
+    // >>>>> Conversion functions
+    float cast_and_swap_float( uint8_t* startAddr );
+    int16_t cast_and_swap_int16( uint8_t* startAddr );
+    int32_t cast_and_swap_int32( uint8_t* startAddr );
+
+private:
     ros::NodeHandle m_nh;
 
     serial::Serial mSerial;
