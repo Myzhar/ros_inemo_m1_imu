@@ -57,10 +57,8 @@ bool CInemoDriver::startIMU()
 
     ROS_INFO_STREAM( "Serial port ready" );
 
-    // TODO Configurate IMU before starting acquisition
 
     // >>>>> Disconnection to resolve previous bad stopping
-
     ROS_INFO_STREAM( "Trying to stop Data Acquisition to solve previously bad interruption of the node"  );
     stopIMU();
     // <<<<< Disconnection to resolve previous bad stopping
@@ -72,6 +70,25 @@ bool CInemoDriver::startIMU()
 
     mPaused = false;
     mStopped = true;
+
+    // >>>>> Data Configuration
+    // TODO Load IMU configuration from params
+    bool ahrs = true;
+    bool compass = false;
+    bool calib = true;
+    bool acc = true;
+    bool gyro = true;
+    bool mag = true;
+    bool press = true;
+    bool temp = true;
+    bool continous = true;
+    DataFreq freq = freq_100_hz;
+    uint16_t samples = 0x0000;
+
+    iNEMO_Set_Output_Mode( ahrs, compass, calib,acc,
+                           gyro, mag, press, temp,
+                           continous, freq, samples );
+    // <<<<< Data Configuration
 
     if( iNEMO_Start_Acquisition() )
     {
@@ -228,7 +245,6 @@ bool CInemoDriver::pauseIMU( bool paused )
 
     if(mPaused)
     {
-        // TODO call iNEMO_Stop_Acquisition to stop data receiving
         reply = iNEMO_Stop_Acquisition();
     }
     else
@@ -344,7 +360,7 @@ bool CInemoDriver::iNEMO_Connect()
 
     if(!mSerial.isOpen())
     {
-        ROS_INFO_STREAM( "Cannot connect, serial port non opened");
+        ROS_ERROR_STREAM( "Cannot connect, serial port non opened");
         return false;
     }
 
@@ -411,7 +427,7 @@ bool CInemoDriver::iNEMO_Disconnect()
 
     if(!mSerial.isOpen())
     {
-        ROS_INFO_STREAM( "Cannot disconnect, serial port non opened");
+        ROS_ERROR_STREAM( "Cannot disconnect, serial port non opened");
         return false;
     }
 
@@ -462,13 +478,105 @@ bool CInemoDriver::iNEMO_Disconnect()
     return false;
 }
 
+bool CInemoDriver::iNEMO_Set_Output_Mode( bool ahrs, bool compass, bool calib, bool acc,
+                            bool gyro, bool mag, bool press, bool temp,
+                            bool continousMode, DataFreq freq, uint16_t sampleCount )
+{
+    ROS_INFO_STREAM( "Sending 'iNEMO_Set_Output_Mode' frame to iNemo");
+
+    if(!mSerial.isOpen())
+    {
+        ROS_ERROR_STREAM( "Cannot send command, serial port non opened");
+        return false;
+    }
+
+    if( !mStopped && !mPaused )
+    {
+        ROS_ERROR_STREAM( "IMU acquisition must be stopped or paused before changing configuration");
+        return false;
+    }
+
+    iNemoFrame frame;
+    frame.mControl = 0x20;
+    frame.mLenght = 0x05;
+    frame.mId = 0x50;
+                              //   Bit0      Bit1       Bit2       Bit3       Bit4       Bit5       Bit6       Bit7
+    frame.mPayload[0] = 0x00; // | AHRS    | COMPASS  | Cal/Raw  | ACC      | GYRO     | MAG      | PRESS    | TEMP     |
+    frame.mPayload[1] = 0x00; // | RFU0    | ASK_DATA | FQ02     | FQ1      | FQ0      | OT2      | OT1      | OT0      |
+    frame.mPayload[2] = 0x00; // Number of samples MSB
+    frame.mPayload[3] = 0x00; // Number of samples LSB
+
+    if(ahrs)
+        frame.mPayload[0] |= 0x80;
+    if(compass)
+        frame.mPayload[0] |= 0x40;
+    if(calib)
+        frame.mPayload[0] |= 0x20;
+    if(acc)
+        frame.mPayload[0] |= 0x10;
+    if(gyro)
+        frame.mPayload[0] |= 0x08;
+    if(mag)
+        frame.mPayload[0] |= 0x04;
+    if(press)
+        frame.mPayload[0] |= 0x02;
+    if(temp)
+        frame.mPayload[0] |= 0x01;
+
+    if(!continousMode)
+        frame.mPayload[1] |= 0x40;
+
+    frame.mPayload[1] |= (uint8_t)(((uint8_t)freq) << 3);
+
+    frame.mPayload[2] = (uint8_t)(sampleCount >> 8);
+    frame.mPayload[2] = (uint8_t)(sampleCount & 0x0011);
+
+    if( sendSerialCmd( frame ) )
+    {
+        if( !mSerial.waitReadable() )
+        {
+            ROS_ERROR_STREAM( "IMU timeout on iNEMO_Set_Output_Mode frame");
+            return false;
+        }
+
+        string reply = mSerial.read( mSerial.available() );
+
+        ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
+        for( int i=0; i< reply.size(); i++ )
+            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+
+        iNemoFrame replyFrame;
+        if( !processSerialData( reply, &replyFrame ) )
+            return false;
+
+        if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x01 && replyFrame.mId == 0x50 )
+        {
+            ROS_INFO_STREAM( "Received ACK: IMU sensors configured");
+
+            return true;
+        }
+
+        if( replyFrame.mControl == 0xC0 )
+        {
+            uint8_t errorCode = replyFrame.mPayload[0];
+            ROS_ERROR_STREAM( "Received NACK: IMU sensors configured. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            return false;
+        }
+
+        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        return false;
+    }
+
+    return false;
+}
+
 bool CInemoDriver::iNEMO_Start_Acquisition()
 {
     ROS_INFO_STREAM( "Sending 'iNEMO_Start_Acquisition' frame to iNemo");
 
     if(!mSerial.isOpen())
     {
-        ROS_INFO_STREAM( "Cannot start acquisition, serial port non opened");
+        ROS_ERROR_STREAM( "Cannot start acquisition, serial port non opened");
         return false;
     }
 
@@ -528,7 +636,7 @@ bool CInemoDriver::iNEMO_Stop_Acquisition()
 
     if(!mSerial.isOpen())
     {
-        ROS_INFO_STREAM( "Cannot stop acquisition, serial port non opened");
+        ROS_ERROR_STREAM( "Cannot stop acquisition, serial port non opened");
         return false;
     }
 

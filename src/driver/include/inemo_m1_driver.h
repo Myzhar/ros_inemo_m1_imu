@@ -98,16 +98,15 @@ protected:
     // <<<<< Sensor setting frames
 
     // >>>>> Acquisition sensor data frames
-    bool iNEMO_Set_Output_Mode( bool ahrs, bool compass, bool calib, bool acc,
+    bool iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool calib, bool acc,
                                 bool gyro, bool mag, bool press, bool temp,
-                                bool continousMode, DataFreq freq, int sampleCount );
+                                bool continousMode, DataFreq freq, uint16_t sampleCount );
     bool iNEMO_Get_Output_Mode( bool& ahrs, bool& compass, bool& calib, bool& acc,
                                 bool& gyro, bool &mag, bool &press, bool& temp,
                                 bool& continousMode, DataFreq& freq, int& sampleCount );
     bool iNEMO_Start_Acquisition(); ///< Starts asynchronous data acquisition according to \ref iNEMO_Set_Output_Mode params
     bool iNEMO_Stop_Acquisition();  ///< Stops asynchronous data acquisition
     bool iNEMO_Get_Acquired_Data(); ///< Request IMU data if asynchronous mode is note active
-
     // <<<<< Acquisition sensor data frames
 
     // <<<<< iNemo Protocol
