@@ -50,6 +50,17 @@ class CInemoDriver : public QThread
     Q_OBJECT
 
 public:
+
+    typedef enum _dataFreq{ freq_1_hz  = 0x00,  // 000
+                            freq_10_hz = 0x01,  // 001
+                            freq_25_hz = 0x02,  // 010
+                            freq_50_hz = 0x03,  // 011
+                            freq_30_hz = 0x04,  // 100
+                            freq_100_hz = 0x05, // 101
+                            freq_400_hz = 0x06, // 110
+                            sensor_sync = 0x07  // 111
+                            } DataFreq;
+
     CInemoDriver();
     ~CInemoDriver();
 
@@ -59,17 +70,10 @@ public:
     std::string getFrameType( uint8_t ctrlByte);
     std::string getMsgName( uint8_t msgIdx );
     std::string getErrorString( uint8_t errIdx );
+    std::string getFrequencyString( DataFreq freq );
 
 
-    typedef enum _dataFreq{ freq_1_hz  = 0x00,
-                            freq_10_hz = 0x01,
-                            freq_25_hz = 0x02,
-                            freq_50_hz = 0x03,
-                            freq_30_hz = 0x04,
-                            freq_100_hz = 0x05,
-                            freq_400_hz = 0x06,
-                            sensor_sync = 0x07
-                            } DataFreq;
+
 
 protected:
     // >>>>> iNemo Protocol
@@ -98,12 +102,12 @@ protected:
     // <<<<< Sensor setting frames
 
     // >>>>> Acquisition sensor data frames
-    bool iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool calib, bool acc,
+    bool iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool raw, bool acc,
                                 bool gyro, bool mag, bool press, bool temp,
                                 bool continousMode, DataFreq freq, uint16_t sampleCount );
-    bool iNEMO_Get_Output_Mode( bool& ahrs, bool& compass, bool& calib, bool& acc,
+    bool iNEMO_Get_Output_Mode( bool& ahrs, bool& compass, bool& raw, bool& acc,
                                 bool& gyro, bool &mag, bool &press, bool& temp,
-                                bool& continousMode, DataFreq& freq, int& sampleCount );
+                                bool& continousMode, DataFreq& freq, uint16_t& sampleCount );
     bool iNEMO_Start_Acquisition(); ///< Starts asynchronous data acquisition according to \ref iNEMO_Set_Output_Mode params
     bool iNEMO_Stop_Acquisition();  ///< Stops asynchronous data acquisition
     bool iNEMO_Get_Acquired_Data(); ///< Request IMU data if asynchronous mode is note active
@@ -173,6 +177,20 @@ private:
     uint8_t mSerialBuf[BUFF_SIZE]; ///< Used to store bytes to be sent to serial port
 
     QMutex mMutex;
+
+    // >>>>> Configuration
+    bool mAhrs;
+    bool mCompass;
+    bool mRaw;
+    bool mAcc;
+    bool mGyro;
+    bool mMag;
+    bool mPress;
+    bool mTemp;
+    bool mContinous;
+    DataFreq mFreq;
+    uint16_t mSamples;
+    // <<<<< Configuration
 };
 
 }

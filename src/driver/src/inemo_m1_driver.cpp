@@ -1,9 +1,12 @@
 #include <inemo_m1_driver.h>
 
 #include <QMutexLocker>
+#include <bitset>
 
 #define BIT(i) (1 << (i))
 #define BIT_TEST(n, i) (((n) & BIT(i)) >> (i))
+
+#define g 9.80665
 
 namespace inemo
 {
@@ -75,19 +78,36 @@ bool CInemoDriver::startIMU()
     // TODO Load IMU configuration from params
     bool ahrs = true;
     bool compass = false;
-    bool calib = true;
+    bool raw = false;
     bool acc = true;
     bool gyro = true;
     bool mag = true;
     bool press = true;
     bool temp = true;
     bool continous = true;
-    DataFreq freq = freq_100_hz;
-    uint16_t samples = 0x0000;
+    DataFreq freq = freq_30_hz;
+    uint16_t samples = 0;
 
-    iNEMO_Set_Output_Mode( ahrs, compass, calib,acc,
+    iNEMO_Set_Output_Mode( ahrs, compass, raw, acc,
                            gyro, mag, press, temp,
                            continous, freq, samples );
+
+    iNEMO_Get_Output_Mode( mAhrs, mCompass, mRaw, mAcc,
+                           mGyro, mMag, mPress, mTemp,
+                           mContinous, mFreq, mSamples );
+
+    ROS_INFO_STREAM( "AHRS is " << mAhrs );
+    ROS_INFO_STREAM( "COMPASS is " << mCompass );
+    ROS_INFO_STREAM( "RAW is " << mRaw );
+    ROS_INFO_STREAM( "ACCELEROMETER is " << mAcc );
+    ROS_INFO_STREAM( "GYROSCOPE is " << mGyro );
+    ROS_INFO_STREAM( "MAGNETOMETER is " << mMag );
+    ROS_INFO_STREAM( "PRESSION is " << mPress );
+    ROS_INFO_STREAM( "TEMPERATURE is " << mTemp );
+
+    ROS_INFO_STREAM( "CONTINOUS MODE is " << mContinous );
+    ROS_INFO_STREAM( "Data frequency is " << getFrequencyString(mFreq) );
+    ROS_INFO_STREAM( "Samples count is " << mSamples );
     // <<<<< Data Configuration
 
     if( iNEMO_Start_Acquisition() )
@@ -109,6 +129,33 @@ bool CInemoDriver::stopIMU()
 
         iNEMO_Disconnect();
     }
+}
+
+std::string CInemoDriver::getFrequencyString( DataFreq freq )
+{
+    if( freq == freq_1_hz )
+        return "1 hz";
+
+    if( freq == freq_30_hz )
+        return "30 hz";
+
+    if( freq == freq_50_hz )
+        return "50 hz";
+
+    if( freq == freq_100_hz )
+        return "100 hz";
+
+    if( freq == freq_10_hz )
+        return "10 hz";
+
+    if( freq == freq_25_hz )
+        return "25 hz";
+
+    if( freq == freq_400_hz )
+        return "400 hz";
+
+    if( freq == sensor_sync )
+        return "sensor_sync";
 }
 
 std::string CInemoDriver::getErrorString( uint8_t errIdx )
@@ -281,7 +328,56 @@ void CInemoDriver::run()
                 iNemoFrame frame;
                 if( processSerialData( serialData, &frame ) )
                 {
-                    ROS_INFO_STREAM( "Data counter: " << (int)frame.mPayload[1] + (int )frame.mPayload[0]*256 );
+                    if( frame.mControl == 0x40 && frame.mLenght>3 && frame.mId == 0x52 )
+                    {
+                        int byteIndex = 0;
+
+                        uint16_t dataCounter = frame.mPayload[byteIndex]*256 + frame.mPayload[byteIndex+1];
+                        ROS_INFO_STREAM( "Data counter: " << dataCounter );
+
+                        byteIndex+=2;
+
+                        double accX, accY, accZ;
+
+                        if( mAcc )
+                        {
+                            int16_t tmpX = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
+                            accX = (double)(tmpX>32767?tmpX-65536:tmpX)/1000.0;
+                            byteIndex+=2;
+
+                            int16_t tmpY = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
+                            accY = (double)(tmpY>32767?tmpY-65536:tmpY)/1000.0;
+                            byteIndex+=2;
+
+                            int16_t tmpZ = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
+                            accZ = (double)(tmpZ>32767?tmpZ-65536:tmpZ)/1000.0;
+                            byteIndex+=2;
+
+                            ROS_INFO_STREAM("Accelerations: " << accX << " " << accY << " " << accZ );
+
+                        }
+
+                        double gyroX, gyroY, gyroZ;
+
+                        if( mGyro )
+                        {
+                            int16_t tmpX = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
+                            gyroX = (double)(tmpX>32767?tmpX-65536:tmpX);
+                            byteIndex+=2;
+
+                            int16_t tmpY = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
+                            gyroY = (double)(tmpY>32767?tmpY-65536:tmpY);
+                            byteIndex+=2;
+
+                            int16_t tmpZ = (frame.mPayload[byteIndex+0]*256 + frame.mPayload[byteIndex+1]);
+                            gyroZ = (double)(tmpZ>32767?tmpZ-65536:tmpZ);
+                            byteIndex+=2;
+
+                            ROS_INFO_STREAM("Rotations: " << gyroX << " " << gyroY << " " << gyroZ );
+                        }
+
+
+                    }
                 }
             }
             else
@@ -320,11 +416,11 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
         memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-1 );
     }
 
-    ROS_INFO_STREAM( "Frame received:" );
-    ROS_INFO_STREAM( "Control:      0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mControl << " - " << getFrameType( outFrame->mControl ) );
-    ROS_INFO_STREAM( "Lenght:       0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mLenght );
-    ROS_INFO_STREAM( "Message Id:   0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mId << " - " << getMsgName( outFrame->mId ) );
-    ROS_INFO_STREAM( "Payload size: " << outFrame->mLenght-1 );
+    ROS_DEBUG_STREAM( "Frame received:" );
+    ROS_DEBUG_STREAM( "Control:      0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mControl << " - " << getFrameType( outFrame->mControl ) );
+    ROS_DEBUG_STREAM( "Lenght:       0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mLenght );
+    ROS_DEBUG_STREAM( "Message Id:   0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mId << " - " << getMsgName( outFrame->mId ) );
+    ROS_DEBUG_STREAM( "Payload size: " << outFrame->mLenght-1 );
 
     return true;
 }
@@ -478,9 +574,9 @@ bool CInemoDriver::iNEMO_Disconnect()
     return false;
 }
 
-bool CInemoDriver::iNEMO_Set_Output_Mode( bool ahrs, bool compass, bool calib, bool acc,
-                            bool gyro, bool mag, bool press, bool temp,
-                            bool continousMode, DataFreq freq, uint16_t sampleCount )
+bool CInemoDriver::iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool raw, bool acc,
+                                         bool gyro, bool mag, bool press, bool temp,
+                                         bool continousMode, DataFreq freq, uint16_t sampleCount )
 {
     ROS_INFO_STREAM( "Sending 'iNEMO_Set_Output_Mode' frame to iNemo");
 
@@ -500,7 +596,7 @@ bool CInemoDriver::iNEMO_Set_Output_Mode( bool ahrs, bool compass, bool calib, b
     frame.mControl = 0x20;
     frame.mLenght = 0x05;
     frame.mId = 0x50;
-                              //   Bit0      Bit1       Bit2       Bit3       Bit4       Bit5       Bit6       Bit7
+    //   Bit0      Bit1       Bit2       Bit3       Bit4       Bit5       Bit6       Bit7
     frame.mPayload[0] = 0x00; // | AHRS    | COMPASS  | Cal/Raw  | ACC      | GYRO     | MAG      | PRESS    | TEMP     |
     frame.mPayload[1] = 0x00; // | RFU0    | ASK_DATA | FQ02     | FQ1      | FQ0      | OT2      | OT1      | OT0      |
     frame.mPayload[2] = 0x00; // Number of samples MSB
@@ -510,7 +606,7 @@ bool CInemoDriver::iNEMO_Set_Output_Mode( bool ahrs, bool compass, bool calib, b
         frame.mPayload[0] |= 0x80;
     if(compass)
         frame.mPayload[0] |= 0x40;
-    if(calib)
+    if(raw)
         frame.mPayload[0] |= 0x20;
     if(acc)
         frame.mPayload[0] |= 0x10;
@@ -528,8 +624,8 @@ bool CInemoDriver::iNEMO_Set_Output_Mode( bool ahrs, bool compass, bool calib, b
 
     frame.mPayload[1] |= (uint8_t)(((uint8_t)freq) << 3);
 
-    frame.mPayload[2] = (uint8_t)(sampleCount >> 8);
-    frame.mPayload[2] = (uint8_t)(sampleCount & 0x0011);
+    frame.mPayload[2] = (uint8_t)((sampleCount & 0xFF00) >> 8);
+    frame.mPayload[3] = (uint8_t)(sampleCount & 0x00FF);
 
     if( sendSerialCmd( frame ) )
     {
@@ -560,6 +656,89 @@ bool CInemoDriver::iNEMO_Set_Output_Mode( bool ahrs, bool compass, bool calib, b
         {
             uint8_t errorCode = replyFrame.mPayload[0];
             ROS_ERROR_STREAM( "Received NACK: IMU sensors configured. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            return false;
+        }
+
+        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        return false;
+    }
+
+    return false;
+}
+
+bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, bool& acc,
+                                         bool& gyro, bool &mag, bool &press, bool& temp,
+                                         bool& continousMode, DataFreq& freq, uint16_t& sampleCount )
+{
+    ROS_INFO_STREAM( "Sending 'iNEMO_Get_Output_Mode' frame to iNemo");
+
+    if(!mSerial.isOpen())
+    {
+        ROS_ERROR_STREAM( "Cannot send command, serial port non opened");
+        return false;
+    }
+
+    if( !mStopped && !mPaused )
+    {
+        ROS_ERROR_STREAM( "IMU acquisition must be stopped or paused before getting configuration");
+        return false;
+    }
+
+    iNemoFrame frame;
+    frame.mControl = 0x20;
+    frame.mLenght = 0x01;
+    frame.mId = 0x51;
+
+    if( sendSerialCmd( frame ) )
+    {
+        if( !mSerial.waitReadable() )
+        {
+            ROS_ERROR_STREAM( "IMU timeout on iNEMO_Get_Output_Mode frame");
+            return false;
+        }
+
+        string reply = mSerial.read( mSerial.available() );
+
+        ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
+        for( int i=0; i< reply.size(); i++ )
+            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+
+        iNemoFrame replyFrame;
+        if( !processSerialData( reply, &replyFrame ) )
+            return false;
+
+        if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x05 && replyFrame.mId == 0x51 )
+        {
+            ROS_INFO_STREAM( "Received ACK: IMU sensors is configured");
+
+            ahrs =      BIT_TEST(replyFrame.mPayload[0],7);
+            compass =   BIT_TEST(replyFrame.mPayload[0],6);
+            raw =       BIT_TEST(replyFrame.mPayload[0],5);
+            acc =       BIT_TEST(replyFrame.mPayload[0],4);
+            gyro =      BIT_TEST(replyFrame.mPayload[0],3);
+            mag =       BIT_TEST(replyFrame.mPayload[0],2);
+            press =     BIT_TEST(replyFrame.mPayload[0],1);
+            temp =      BIT_TEST(replyFrame.mPayload[0],0);
+
+            continousMode = (BIT_TEST(replyFrame.mPayload[1],6)==0)?true:false;
+
+            freq = (DataFreq)((replyFrame.mPayload[1] >> 3) & 0x07);
+
+            sampleCount = replyFrame.mPayload[2] * 256 + replyFrame.mPayload[3];
+
+
+            ROS_DEBUG_STREAM( "byte 0: " << (bitset<8>) replyFrame.mPayload[0] );
+            ROS_DEBUG_STREAM( "byte 1: " << (bitset<8>) replyFrame.mPayload[1] );
+            ROS_DEBUG_STREAM( "byte 2: " << (bitset<8>) replyFrame.mPayload[2] );
+            ROS_DEBUG_STREAM( "byte 3: " << (bitset<8>) replyFrame.mPayload[3] );
+
+            return true;
+        }
+
+        if( replyFrame.mControl == 0xC0 )
+        {
+            uint8_t errorCode = replyFrame.mPayload[0];
+            ROS_ERROR_STREAM( "Received NACK: IMU sensors error. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
             return false;
         }
 
