@@ -3,11 +3,14 @@
 #include <QMutexLocker>
 #include <bitset>
 #include <byteswap.h>
+#include <sensor_msgs/Imu.h>
 
 #define BIT(i) (1 << (i))
 #define BIT_TEST(n, i) (((n) & BIT(i)) >> (i))
 
 #define g 9.80665
+#define RAD2DEG 57.295779513082320876798154814105
+#define DEG2RAD 0.01745329251994329576923690768489
 
 namespace inemo
 {
@@ -359,55 +362,76 @@ void CInemoDriver::run()
                 {
                     if( frame.mControl == 0x40 && frame.mLenght>3 && frame.mId == 0x52 )
                     {
+                        sensor_msgs::Imu imuMsg;
+
                         int byteIndex = 0;
 
                         uint16_t dataCounter = bswap_16(*(uint16_t*)(&(frame.mPayload[byteIndex]))); // Casting uint8_t to uint16_t and byte swapping
                         ROS_INFO_STREAM( "Data counter: " << dataCounter );
 
-                        byteIndex+=2;
-
-                        float accX, accY, accZ;
+                        byteIndex+=2;                        
 
                         if( mAcc )
                         {
+                            float accX_g, accY_g, accZ_g;
+                            double accX, accY, accZ;
+
                             int16_t valX = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
-                            accX = (float)valX / 1000.0;
+                            accX_g = (float)valX / 1000.0;
+                            accX = accX_g/g;
 
                             byteIndex+=2; // Next value
 
                             int16_t valY = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
-                            accY = (float)valY / 1000.0;
+                            accY_g = (float)valY / 1000.0;
+                            accY = accY_g/g;
 
                             byteIndex+=2; // Next value
 
                             int16_t valZ = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
-                            accZ = (float)valZ / 1000.0;
+                            accZ_g = (float)valZ / 1000.0;
+                            accZ = accZ_g/g;
 
                             byteIndex+=2; // Next value
 
-                            ROS_INFO_STREAM("Accelerations: " << accX << " " << accY << " " << accZ );
-                        }
+                            ROS_INFO_STREAM("Accelerations: " << accX << " m/sec^2, " << accY << " m/sec^2, " << accZ << " m/sec^2"  );
 
-                        float gyroX, gyroY, gyroZ;
+                            imuMsg.linear_acceleration.x = accX;
+                            imuMsg.linear_acceleration.y = accY;
+                            imuMsg.linear_acceleration.z = accZ;
+
+                            // TODO add covariance matrix using data from sensor datasheet
+                        }
 
                         if( mGyro )
                         {
+                            float gyroX_deg, gyroY_deg, gyroZ_deg;
+                            double gyroX, gyroY, gyroZ;
+
                             int16_t valX = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
-                            gyroX = (float)valX;
+                            gyroX_deg = (float)valX;
+                            gyroX = gyroX_deg*DEG2RAD;
 
                             byteIndex+=2; // Next value
 
                             int16_t valY = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
-                            gyroY = (float)valY;
+                            gyroY_deg = (float)valY;
+                            gyroY = gyroY_deg*DEG2RAD;
 
                             byteIndex+=2; // Next value
 
                             int16_t valZ = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
-                            gyroZ = (float)valZ;
+                            gyroZ_deg = (float)valZ;
+                            gyroZ = gyroZ_deg*DEG2RAD;
 
                             byteIndex+=2; // Next value
 
-                            ROS_INFO_STREAM("Rotations: " << gyroX << " " << gyroY << " " << gyroZ );
+                            ROS_INFO_STREAM("Rotations: " << gyroX << " rad/sec, " << gyroY << " rad/sec, " << gyroZ << " rad/sec" );
+
+                            imuMsg.angular_velocity.x = gyroX;
+                            imuMsg.angular_velocity.y = gyroY;
+                            imuMsg.angular_velocity.z = gyroZ;
+                            // TODO add covariance matrix using data from sensor datasheet
                         }
 
                         float magX, magY, magZ;
