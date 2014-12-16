@@ -22,9 +22,9 @@ namespace inemo
  */
 typedef struct _iNemoFrame
 {
-    uint8_t mControl;   ///< Control byte
-    uint8_t mLenght;     ///< Size byte
-    uint8_t mId;        ///< Message id
+		uint8_t mControl; ///< Control byte
+		uint8_t mLenght;  ///< Size byte
+		uint8_t mId;      ///< Message id
     uint8_t mPayload[125];   ///< Frame payload
 } iNemoFrame;
 
@@ -197,6 +197,9 @@ private:
     DataFreq mFreq;
     uint16_t mSamples;
     // <<<<< Configuration
+
+		// >>>>> ROS Publishers
+		// <<<<< ROS Publishers
 };
 
 }
