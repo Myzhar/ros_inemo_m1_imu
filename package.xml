@@ -14,8 +14,13 @@
   <build_depend>Qt5Core</build_depend>
   <build_depend>serial</build_depend>
   <build_depend>std_msgs</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>sensor_msgs</build_depend>
 
   <run_depend>Qt5Core</run_depend>
   <run_depend>serial</run_depend>
   <run_depend>std_msgs</run_depend>
+  <run_depend>geometry_msgs</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+
 </package>

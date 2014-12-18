@@ -15,6 +15,8 @@ catkin_package(
   CATKIN_DEPENDS
     serial
     std_msgs
+    sensor_msgs
+    geometry_msgs
 )
 
 #########################################################

@@ -8,6 +8,7 @@
 #include <sensor_msgs/MagneticField.h>
 #include <sensor_msgs/Temperature.h>
 #include <geometry_msgs/Vector3Stamped.h>
+#include <tf/tf.h>
 
 #define BIT(i) (1 << (i))
 #define BIT_TEST(n, i) (((n) & BIT(i)) >> (i))
@@ -348,11 +349,11 @@ namespace inemo
 
 		ROS_INFO_STREAM( "IMU Data acquiring loop started");
 
-		static ros::Publisher imu_pub = m_nh.advertise<sensor_msgs::Imu>("imu/data", 1, false);
-		static ros::Publisher mag_pub = m_nh.advertise<sensor_msgs::MagneticField>("imu/mag", 1, false);
-		static ros::Publisher rpy_pub = m_nh.advertise<geometry_msgs::Vector3Stamped>("imu/rpy", 1, false);
-		static ros::Publisher temp_pub = m_nh.advertise<sensor_msgs::Temperature>("imu/temperature", 1, false);
-		static ros::Publisher press_pub = m_nh.advertise<std_msgs::Float32>("imu/pressure", 1, false);
+		static ros::Publisher imu_pub = m_nh.advertise<sensor_msgs::Imu>("imu_data", 10, false);
+		static ros::Publisher mag_pub = m_nh.advertise<sensor_msgs::MagneticField>("inemo/mag", 10, false);
+		static ros::Publisher rpy_pub = m_nh.advertise<geometry_msgs::Vector3Stamped>("inemo/rpy", 10, false);
+		static ros::Publisher temp_pub = m_nh.advertise<sensor_msgs::Temperature>("inemo/temperature", 10, false);
+		static ros::Publisher press_pub = m_nh.advertise<std_msgs::Float32>( "inemo/pressure", 10, false);
 
 		std_msgs::Header header;
 		ros::param::param<std::string>("~frame_id", header.frame_id, "imu_link");
@@ -375,6 +376,37 @@ namespace inemo
 					{
 						if( frame.mControl == 0x40 && frame.mLenght>3 && frame.mId == 0x52 )
 						{
+							// >>>>> Control over size of data
+							int totByte = 3; // [Lenght][msg_id][counter 2 Byte]
+
+							if( mAhrs )
+								totByte += 28;
+
+							if( mAcc )
+								totByte += 6;
+
+							if( mGyro )
+								totByte += 6;
+
+							if( mMag )
+								totByte += 6;
+
+							if( mPress )
+								totByte += 4;
+
+							if( mTemp )
+								totByte += 2;
+
+							if( mCompass )
+								totByte += 16;
+
+							if( frame.mLenght != totByte )
+							{
+								ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << (unsigned short int)frame.mLenght << " bytes, expected: " << totByte );
+								continue;
+							}
+							// <<<<< Control over size of data
+
 							sensor_msgs::Imu imuMsg;
 							sensor_msgs::Temperature tempMsg;
 							sensor_msgs::MagneticField magFieldMsg;
@@ -550,15 +582,21 @@ namespace inemo
 								quatZ = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
 								byteIndex+=4; // Next value
 
-								ROS_INFO_STREAM("Q0, Q1, Q2, Q3: " << quatW << " " << quatX << " " << quatY << " " << quatZ );
+								ROS_INFO_STREAM("Q0, Q1, Q2, Q3: " << quatX << " " << quatY << " " << quatZ << " " << quatW );
 
 
 								imuMsg.orientation.x = quatX;
 								imuMsg.orientation.y = quatY;
 								imuMsg.orientation.z = quatZ;
 								imuMsg.orientation.w = quatW;
-
 								// <<<<< quaternion
+
+								// >>>>> Test
+								// This test is useful to verify that Quaternion and RPY are read correctly
+
+								//tf::Quaternion testQuat =  tf::createQuaternionFromRPY(R*DEG2RAD,P*DEG2RAD,Y*DEG2RAD);
+								//ROS_INFO_STREAM("Q0_T, Q1_T, Q2_T, Q3_T: " << testQuat.getX() << " " << testQuat.getY() << " " << testQuat.getZ() << " " << testQuat.getW() );
+								// <<<<< Test
 							}
 
 							// >>>>> Message publishing
@@ -567,7 +605,6 @@ namespace inemo
 							magFieldMsg.header = header;
 							tempMsg.header = header;
 							//pressMsg.header = header;
-
 
 							if(imu_pub.getNumSubscribers() > 0)
 								imu_pub.publish( imuMsg );
@@ -583,7 +620,6 @@ namespace inemo
 
 							if( press_pub.getNumSubscribers() > 0 )
 								press_pub.publish( pressMsg );
-
 							// <<<<< Message publishing
 						}
 					}
@@ -624,11 +660,11 @@ namespace inemo
 			memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-1 );
 		}
 
-		ROS_DEBUG_STREAM( "Frame received:" );
-		ROS_DEBUG_STREAM( "Control:      0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mControl << " - " << getFrameType( outFrame->mControl ) );
-		ROS_DEBUG_STREAM( "Lenght:       0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mLenght );
-		ROS_DEBUG_STREAM( "Message Id:   0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mId << " - " << getMsgName( outFrame->mId ) );
-		ROS_DEBUG_STREAM( "Payload size: " << outFrame->mLenght-1 );
+		ROS_INFO_STREAM( "Frame received:" );
+		ROS_INFO_STREAM( "Control:      0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mControl << " - " << getFrameType( outFrame->mControl ) );
+		ROS_INFO_STREAM( "Lenght:       0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mLenght );
+		ROS_INFO_STREAM( "Message Id:   0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mId << " - " << getMsgName( outFrame->mId ) );
+		ROS_INFO_STREAM( "Payload size: " << outFrame->mLenght-1 );
 
 		return true;
 	}
@@ -933,7 +969,6 @@ namespace inemo
 				freq = (DataFreq)((replyFrame.mPayload[1] >> 3) & 0x07);
 
 				sampleCount = replyFrame.mPayload[2] * 256 + replyFrame.mPayload[3];
-
 
 				ROS_DEBUG_STREAM( "byte 0: " << (bitset<8>) replyFrame.mPayload[0] );
 				ROS_DEBUG_STREAM( "byte 1: " << (bitset<8>) replyFrame.mPayload[1] );
