@@ -1,6 +1,5 @@
 #include <inemo_m1_driver.h>
 
-#include <QMutexLocker>
 #include <bitset>
 #include <byteswap.h>
 #include <std_msgs/Float32.h>
@@ -122,7 +121,7 @@ namespace inemo
 		if( iNEMO_Start_Acquisition() )
 		{
 			//Thread start
-			start();
+			startThread();
 
 			return true;
 		}
@@ -139,6 +138,14 @@ namespace inemo
 			iNEMO_Disconnect();
 		}
 	}
+	
+	void  CInemoDriver::startThread(void)
+        {
+                int       result;
+                result = pthread_create(&mThreadId, 0, CInemoDriver::callRunFunction, this);
+                if (result == 0)
+                    pthread_detach(mThreadId);
+        }
 
 	std::string CInemoDriver::getFrequencyString( DataFreq freq )
 	{
@@ -295,7 +302,8 @@ namespace inemo
 
 	bool CInemoDriver::pauseIMU( bool paused )
 	{
-		QMutexLocker locker(&mMutex);
+		//QMutexLocker locker(&mMutex);
+		pthread_mutex_lock(&mMutex);
 
 		bool reply;
 
@@ -311,6 +319,7 @@ namespace inemo
 
 		mPaused = paused;
 
+                pthread_mutex_unlock(&mMutex);
 		return mPaused;
 	}
 
@@ -341,7 +350,7 @@ namespace inemo
 		return swapped;
 	}
 
-	void CInemoDriver::run()
+	void* CInemoDriver::run()
 	{
 		mStopped = false;
 		mPaused = false;
@@ -635,6 +644,8 @@ namespace inemo
 		}
 
 		ROS_INFO_STREAM( "IMU Data acquring loop stopped");
+		
+		return 0;
 	}
 
 	bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)

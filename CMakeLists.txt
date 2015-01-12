@@ -20,18 +20,7 @@ catkin_package(
 )
 
 #########################################################
-# Qt5
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-
-find_package(Qt5Core REQUIRED)
-#########################################################
-
-#########################################################
 # INCLUDES
-set(qt_header_path
-     src/driver/include
-)
 
 set(inemo_m1_INC_DIRS
     src/
@@ -49,7 +38,6 @@ include_directories(
 # SOURCES
 set(inemo_m1_SRC
     src/inemo_m1_node.cpp
-    src/driver/include/inemo_m1_driver.h # needed to make AUTOMOC work
     src/driver/src/inemo_m1_driver.cpp
 )
 #########################################################
@@ -61,10 +49,8 @@ add_executable(
         ${inemo_m1_SRC}
 )
 
-qt5_use_modules(inemo_m1_node Core)
-
 target_link_libraries(
 	inemo_m1_node
-  	${catkin_LIBRARIES}
+  	${catkin_LIBRARIES} pthread
 )
 #########################################################

@@ -1,12 +1,11 @@
 #ifndef _INEMO_M1_DRIVER_H_
 #define _INEMO_M1_DRIVER_H_
 
-#include <QThread>
-#include <QMutex>
 #include <ros/ros.h>
 #include <serial/serial.h>
 #include <stdlib.h>
 #include <string>
+#include <pthread.h>
 
 using namespace std;
 
@@ -45,7 +44,7 @@ typedef struct _iNemoFrame
  * and reply messages
  *
  */
-class CInemoDriver : public QThread
+class CInemoDriver
 {
     Q_OBJECT
 
@@ -63,6 +62,11 @@ public:
 
     CInemoDriver();
     ~CInemoDriver();
+    
+    /// Function used to start a thread inside the class
+    static void*  callRunFunction(void *arg) { return ((CInemoDriver*)arg)->run(); }
+    
+    void startThread(void);
 
     bool startIMU();
     bool stopIMU();
@@ -71,8 +75,6 @@ public:
     std::string getMsgName( uint8_t msgIdx );
     std::string getErrorString( uint8_t errIdx );
     std::string getFrequencyString( DataFreq freq );
-
-
 
 
 protected:
@@ -129,10 +131,10 @@ protected:
 
     /*!
      * \brief run
-     * Process the serial data continously when
+     * Thread function. Process the serial data continously when
      * the \ref iNEMO_Start_Acquisition is called
      */
-    void run() Q_DECL_OVERRIDE;
+    void* run();
 
     /*!
      * \brief processSerialData the data read from serial
@@ -182,8 +184,6 @@ private:
 
     uint8_t mSerialBuf[BUFF_SIZE]; ///< Used to store bytes to be sent to serial port
 
-    QMutex mMutex;
-
     // >>>>> Configuration
     bool mAhrs;
     bool mCompass;
@@ -197,9 +197,12 @@ private:
     DataFreq mFreq;
     uint16_t mSamples;
     // <<<<< Configuration
+    
+    pthread_t mThreadId; // Thread Id
+    pthread_mutex_t mMutex;
 
-		// >>>>> ROS Publishers
-		// <<<<< ROS Publishers
+    // >>>>> ROS Publishers
+    // <<<<< ROS Publishers
 };
 
 }
