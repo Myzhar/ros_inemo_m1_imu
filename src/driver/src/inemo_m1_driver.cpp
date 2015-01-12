@@ -19,8 +19,7 @@
 namespace inemo
 {
 
-	CInemoDriver::CInemoDriver() :
-	QThread( NULL )
+    CInemoDriver::CInemoDriver()
 	{
 		// TODO: add parameters for serial port initialization!!!
 
@@ -640,7 +639,8 @@ namespace inemo
 				}
 			}
 			else
-				msleep( 10 );
+                //msleep( 10 );
+                usleep( 10000 );
 		}
 
 		ROS_INFO_STREAM( "IMU Data acquring loop stopped");

@@ -46,8 +46,6 @@ typedef struct _iNemoFrame
  */
 class CInemoDriver
 {
-    Q_OBJECT
-
 public:
 
     typedef enum _dataFreq{ freq_1_hz  = 0x00,  // 000
@@ -90,11 +88,11 @@ protected:
     // <<<<< Communication control frames
 
     // >>>>> Board information frames
-    quint8 iNEMO_Get_MCU_ID();
-    QString iNEMO_Get_FW_Version();
-    QString iNEMO_Get_HW_Version();
-    quint8 iNEMO_Identify();
-    QString iNEMO_Get_AHRS_Library();
+    uint8_t iNEMO_Get_MCU_ID();
+    string iNEMO_Get_FW_Version();
+    string iNEMO_Get_HW_Version();
+    uint8_t iNEMO_Identify();
+    string iNEMO_Get_AHRS_Library();
     bool iNEMO_Get_Libraries( bool& FAT, bool& Trace, bool& Altimeter, bool& Compass, bool& AHRS );
     bool iNEMO_Get_Available_Sensors( bool& acc, bool& gyro, bool& mag, bool& press, bool& temp );
     // <<<<< Board information frames
