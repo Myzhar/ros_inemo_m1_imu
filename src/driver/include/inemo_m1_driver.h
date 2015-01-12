@@ -1,12 +1,11 @@
 #ifndef _INEMO_M1_DRIVER_H_
 #define _INEMO_M1_DRIVER_H_
 
-#include <QThread>
-#include <QMutex>
 #include <ros/ros.h>
 #include <serial/serial.h>
 #include <stdlib.h>
 #include <string>
+#include <pthread.h>
 
 using namespace std;
 
@@ -45,10 +44,8 @@ typedef struct _iNemoFrame
  * and reply messages
  *
  */
-class CInemoDriver : public QThread
+class CInemoDriver
 {
-    Q_OBJECT
-
 public:
 
     typedef enum _dataFreq{ freq_1_hz  = 0x00,  // 000
@@ -63,6 +60,11 @@ public:
 
     CInemoDriver();
     ~CInemoDriver();
+    
+    /// Function used to start a thread inside the class
+    static void*  callRunFunction(void *arg) { return ((CInemoDriver*)arg)->run(); }
+    
+    void startThread(void);
 
     bool startIMU();
     bool stopIMU();
@@ -71,8 +73,6 @@ public:
     std::string getMsgName( uint8_t msgIdx );
     std::string getErrorString( uint8_t errIdx );
     std::string getFrequencyString( DataFreq freq );
-
-
 
 
 protected:
@@ -88,11 +88,11 @@ protected:
     // <<<<< Communication control frames
 
     // >>>>> Board information frames
-    quint8 iNEMO_Get_MCU_ID();
-    QString iNEMO_Get_FW_Version();
-    QString iNEMO_Get_HW_Version();
-    quint8 iNEMO_Identify();
-    QString iNEMO_Get_AHRS_Library();
+    uint8_t iNEMO_Get_MCU_ID();
+    string iNEMO_Get_FW_Version();
+    string iNEMO_Get_HW_Version();
+    uint8_t iNEMO_Identify();
+    string iNEMO_Get_AHRS_Library();
     bool iNEMO_Get_Libraries( bool& FAT, bool& Trace, bool& Altimeter, bool& Compass, bool& AHRS );
     bool iNEMO_Get_Available_Sensors( bool& acc, bool& gyro, bool& mag, bool& press, bool& temp );
     // <<<<< Board information frames
@@ -129,10 +129,10 @@ protected:
 
     /*!
      * \brief run
-     * Process the serial data continously when
+     * Thread function. Process the serial data continously when
      * the \ref iNEMO_Start_Acquisition is called
      */
-    void run() Q_DECL_OVERRIDE;
+    void* run();
 
     /*!
      * \brief processSerialData the data read from serial
@@ -182,8 +182,6 @@ private:
 
     uint8_t mSerialBuf[BUFF_SIZE]; ///< Used to store bytes to be sent to serial port
 
-    QMutex mMutex;
-
     // >>>>> Configuration
     bool mAhrs;
     bool mCompass;
@@ -197,9 +195,12 @@ private:
     DataFreq mFreq;
     uint16_t mSamples;
     // <<<<< Configuration
+    
+    pthread_t mThreadId; // Thread Id
+    pthread_mutex_t mMutex;
 
-		// >>>>> ROS Publishers
-		// <<<<< ROS Publishers
+    // >>>>> ROS Publishers
+    // <<<<< ROS Publishers
 };
 
 }
