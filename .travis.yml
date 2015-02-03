@@ -36,7 +36,7 @@ install: # Use this to install any prerequisites or dependencies necessary to ru
   - cd ~/ros/ws_ST-iNemo_M1-IMU/src
   - wstool init .
   # Download non-debian stuff
-  - wstool merge https://github.com/Myzhar/ST-iNemo_M1-IMU/blob/master/ST-iNemo_M1-IMU.rosinstal
+  #- wstool merge https://github.com/Myzhar/ST-iNemo_M1-IMU/blob/master/ST-iNemo_M1-IMU.rosinstal
   - wstool update
   # Delete the ST-iNemo_M1-IMU.rosinstall version of this repo and use the one of the branch we are testing
   - rm -rf $REPOSITORY_NAME
