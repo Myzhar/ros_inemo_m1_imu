@@ -1,0 +1,1 @@
+- git: {local-name: ST-iNemo_M1-IMU, uri: 'https://github.com/Myzhar/ST-iNemo_M1-IMU.git', version: indigo-devel}
