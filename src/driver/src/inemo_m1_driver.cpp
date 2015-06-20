@@ -374,8 +374,8 @@ namespace inemo
 			{
 				if( mSerial.waitReadable() )
 				{
-					ROS_INFO_STREAM( "---------------------------------" );
-					ROS_INFO_STREAM( "Reading from serial port");
+                    ROS_DEBUG_STREAM( "---------------------------------" );
+                    ROS_DEBUG_STREAM( "Reading from serial port");
 
 					string serialData = mSerial.read(mSerial.available());
 
@@ -426,7 +426,7 @@ namespace inemo
 							int byteIndex = 0;
 
 							uint16_t dataCounter = bswap_16(*(uint16_t*)(&(frame.mPayload[byteIndex]))); // Casting uint8_t to uint16_t and byte swapping
-							ROS_INFO_STREAM( "Data counter: " << dataCounter );
+                            ROS_DEBUG_STREAM( "Data counter: " << dataCounter );
 
 							byteIndex+=2;
 
@@ -453,7 +453,7 @@ namespace inemo
 
 								byteIndex+=2; // Next value
 
-								ROS_INFO_STREAM("Accelerations: " << accX << " m/sec^2, " << accY << " m/sec^2, " << accZ << " m/sec^2"  );
+                                ROS_DEBUG_STREAM("Accelerations: " << accX << " m/sec^2, " << accY << " m/sec^2, " << accZ << " m/sec^2"  );
 
 								imuMsg.linear_acceleration.x = accX;
 								imuMsg.linear_acceleration.y = accY;
@@ -485,7 +485,7 @@ namespace inemo
 
 								byteIndex+=2; // Next value
 
-								ROS_INFO_STREAM("Rotations: " << gyroX << " rad/sec, " << gyroY << " rad/sec, " << gyroZ << " rad/sec" );
+                                ROS_DEBUG_STREAM("Rotations: " << gyroX << " rad/sec, " << gyroY << " rad/sec, " << gyroZ << " rad/sec" );
 
 								imuMsg.angular_velocity.x = gyroX;
 								imuMsg.angular_velocity.y = gyroY;
@@ -518,7 +518,7 @@ namespace inemo
 
 								byteIndex+=2; // Next value
 
-								ROS_INFO_STREAM("Magnetic field: " << magX << " Tesla," << magY << " Tesla," << magZ << " Tesla" );
+                                ROS_DEBUG_STREAM("Magnetic field: " << magX << " Tesla," << magY << " Tesla," << magZ << " Tesla" );
 
 								magFieldMsg.magnetic_field.x = magX;
 								magFieldMsg.magnetic_field.y = magY;
@@ -535,7 +535,7 @@ namespace inemo
 
 								byteIndex+=4; // Next value
 
-								ROS_INFO_STREAM("Pressure: " << pressure << " mbar" );
+                                ROS_DEBUG_STREAM("Pressure: " << pressure << " mbar" );
 
 								pressMsg.data = pressure;
 							}
@@ -548,7 +548,7 @@ namespace inemo
 
 								byteIndex+=2; // Next value
 
-								ROS_INFO_STREAM("Temperature: " << temperature );
+                                ROS_DEBUG_STREAM("Temperature: " << temperature );
 
 								tempMsg.temperature = temperature;
 
@@ -570,7 +570,7 @@ namespace inemo
 								Y = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
 								byteIndex+=4; // Next value
 
-								ROS_INFO_STREAM("Roll, Pitch, Yaw: " << R << " " << P << " " << Y );
+                                ROS_DEBUG_STREAM("Roll, Pitch, Yaw: " << R << " " << P << " " << Y );
 
 								rpyMsg.vector.x = R;
 								rpyMsg.vector.y = P;
@@ -590,7 +590,7 @@ namespace inemo
 								quatZ = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
 								byteIndex+=4; // Next value
 
-								ROS_INFO_STREAM("Q0, Q1, Q2, Q3: " << quatX << " " << quatY << " " << quatZ << " " << quatW );
+                                ROS_DEBUG_STREAM("Q0, Q1, Q2, Q3: " << quatX << " " << quatY << " " << quatZ << " " << quatW );
 
 
 								imuMsg.orientation.x = quatX;
@@ -603,7 +603,7 @@ namespace inemo
 								// This test is useful to verify that Quaternion and RPY are read correctly
 
 								//tf::Quaternion testQuat =  tf::createQuaternionFromRPY(R*DEG2RAD,P*DEG2RAD,Y*DEG2RAD);
-								//ROS_INFO_STREAM("Q0_T, Q1_T, Q2_T, Q3_T: " << testQuat.getX() << " " << testQuat.getY() << " " << testQuat.getZ() << " " << testQuat.getW() );
+                                //ROS_DEBUG_STREAM("Q0_T, Q1_T, Q2_T, Q3_T: " << testQuat.getX() << " " << testQuat.getY() << " " << testQuat.getZ() << " " << testQuat.getW() );
 								// <<<<< Test
 							}
 
@@ -671,11 +671,11 @@ namespace inemo
 			memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-1 );
 		}
 
-		ROS_INFO_STREAM( "Frame received:" );
-		ROS_INFO_STREAM( "Control:      0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mControl << " - " << getFrameType( outFrame->mControl ) );
-		ROS_INFO_STREAM( "Lenght:       0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mLenght );
-		ROS_INFO_STREAM( "Message Id:   0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mId << " - " << getMsgName( outFrame->mId ) );
-		ROS_INFO_STREAM( "Payload size: " << outFrame->mLenght-1 );
+        ROS_DEBUG_STREAM( "Frame received:" );
+        ROS_DEBUG_STREAM( "Control:      0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mControl << " - " << getFrameType( outFrame->mControl ) );
+        ROS_DEBUG_STREAM( "Lenght:       0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mLenght );
+        ROS_DEBUG_STREAM( "Message Id:   0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mId << " - " << getMsgName( outFrame->mId ) );
+        ROS_DEBUG_STREAM( "Payload size: " << outFrame->mLenght-1 );
 
 		return true;
 	}
