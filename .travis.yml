@@ -29,6 +29,13 @@ install: # Use this to install any prerequisites or dependencies necessary to ru
   # Create workspace
   - mkdir -p ~/ros/ws_or/src
   - cd ~/ros/ws_or/src
+  # Install serial
+  - sudo apt-get install git
+  - git clone git://github.com/wjwwood/serial.git
+  - cd serial
+  - make
+  - sudo make install
+  # ROS
   - wstool init .
   - wstool update
   - ln -s $CI_SOURCE_PATH . # Link the repo we are testing to the new workspace
