@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string>
 #include <pthread.h>
+#include <signal.h>
 
 using namespace std;
 
@@ -74,8 +75,17 @@ public:
     std::string getErrorString( uint8_t errIdx );
     std::string getFrequencyString( DataFreq freq );
 
-
 protected:
+    // >>>>> Ctrl+C handler
+    /*! Ctrl+C handler
+     */
+    static void sighandler(int signo)
+    {
+        CInemoDriver::mStopping = (signo == SIGINT);
+        ROS_INFO_STREAM("Ctrl+C pressed by user" );
+    }
+    // <<<<< Ctrl+C handler
+
     // >>>>> iNemo Protocol
 
     // >>>>> Communication control frames
@@ -177,6 +187,8 @@ private:
 
     bool mStopped; ///< Used to stop the serial processing
     bool mPaused; ///< Used to pause asynchronous data processing
+
+    static bool mStopping; ///< Used to stop driver using Ctrl+C
 
     uint64_t mNoDataCounter;
 

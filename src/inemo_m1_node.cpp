@@ -1,7 +1,9 @@
 #include <stdlib.h>
 #include <ros/ros.h>
+#include <ros/console.h>
 
-#include <inemo_m1_driver.h>
+
+#include "driver/include/inemo_m1_driver.h"
 
 int main(int argc, char** argv)
 {
@@ -13,17 +15,19 @@ int main(int argc, char** argv)
   ROS_INFO_STREAM("    ST iNemo-M1 Discovery Node     \r");
   ROS_INFO_STREAM("-----------------------------------\r");
 
+  if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) ) {
+     ros::console::notifyLoggerLevelsChanged();
+  }
+
   if( !inemoDrv.startIMU() )
     return(EXIT_FAILURE);
 
-  /*while( ros::ok() )
+  while( ros::ok() )
   {
     ros::spinOnce();
-  }*/
+  }
 
-  ros::spin();
-
-  inemoDrv.stopIMU();
+  ROS_INFO_STREAM("... stopped!");
 
   return(EXIT_SUCCESS);
 }
