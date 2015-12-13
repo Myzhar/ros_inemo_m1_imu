@@ -10,7 +10,7 @@
 
 using namespace std;
 
-#define BUFF_SIZE 128
+#define BUFF_SIZE 64
 
 namespace inemo
 {
@@ -25,7 +25,7 @@ typedef struct _iNemoFrame
     uint8_t mControl; ///< Control byte
     uint8_t mLenght;  ///< Size byte
     uint8_t mId;      ///< Message id
-    uint8_t mPayload[125];   ///< Frame payload
+    uint8_t mPayload[61];   ///< Frame payload
 } iNemoFrame;
 
 /*!

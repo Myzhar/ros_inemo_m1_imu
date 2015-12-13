@@ -460,19 +460,19 @@ void* CInemoDriver::run()
 
                             int16_t valX = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             accX_g = (float)valX / 1000.0;
-                            accX = accX_g/g;
+                            accX = accX_g*g;
 
                             byteIndex+=2; // Next value
 
                             int16_t valY = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             accY_g = (float)valY / 1000.0;
-                            accY = accY_g/g;
+                            accY = accY_g*g;
 
                             byteIndex+=2; // Next value
 
                             int16_t valZ = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             accZ_g = (float)valZ / 1000.0;
-                            accZ = accZ_g/g;
+                            accZ = accZ_g*g;
 
                             byteIndex+=2; // Next value
 
@@ -686,7 +686,7 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
     outFrame->mLenght = (uint8_t)serialData.data()[1];
     outFrame->mId = (uint8_t)serialData.data()[2];
 
-    if(outFrame->mLenght > 126)
+    if(outFrame->mLenght > 61)
     {
         ROS_ERROR_STREAM( "The 'lenght' byte is higher than 126. Value:" << (int)outFrame->mLenght );
         return false;
