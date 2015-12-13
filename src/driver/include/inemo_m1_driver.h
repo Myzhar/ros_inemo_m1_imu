@@ -22,9 +22,9 @@ namespace inemo
  */
 typedef struct _iNemoFrame
 {
-		uint8_t mControl; ///< Control byte
-		uint8_t mLenght;  ///< Size byte
-		uint8_t mId;      ///< Message id
+    uint8_t mControl; ///< Control byte
+    uint8_t mLenght;  ///< Size byte
+    uint8_t mId;      ///< Message id
     uint8_t mPayload[125];   ///< Frame payload
 } iNemoFrame;
 
@@ -49,15 +49,40 @@ class CInemoDriver
 {
 public:
 
-    typedef enum _dataFreq{ freq_1_hz  = 0x00,  // 000
-                            freq_10_hz = 0x01,  // 001
-                            freq_25_hz = 0x02,  // 010
-                            freq_50_hz = 0x03,  // 011
-                            freq_30_hz = 0x04,  // 100
-                            freq_100_hz = 0x05, // 101
-                            freq_400_hz = 0x06, // 110
-                            sensor_sync = 0x07  // 111
-                            } DataFreq;
+    typedef enum _dataFreq
+    {
+        freq_1_hz  = 0x00,  // 000
+        freq_10_hz = 0x01,  // 001
+        freq_25_hz = 0x02,  // 010
+        freq_50_hz = 0x03,  // 011
+        freq_30_hz = 0x04,  // 100
+        freq_100_hz = 0x05, // 101
+        freq_400_hz = 0x06, // 110
+        sensor_sync = 0x07  // 111
+    } DataFreq;
+
+    typedef enum _sensorType
+    {
+        accel = 0x00,
+        mag = 0x01,
+        gyro = 0x02,
+        press = 0x04,
+        temp = 0x05
+    } SensType;
+
+    typedef enum _gyroParams
+    {
+        data_rate = 0x00,
+        full_scale = 0x01,
+        gyro_HPF = 0x02,
+        offset_X = 0x03,
+        offset_Y = 0x04,
+        offset_Z = 0x05,
+        scale_factor_X = 0x06,
+        scale_factor_Y = 0x07,
+        scale_factor_Z = 0x08,
+        sensor_name = 0xFF
+    } GyroParams;
 
     CInemoDriver();
     ~CInemoDriver();
@@ -108,13 +133,13 @@ protected:
     // <<<<< Board information frames
 
     // >>>>> Sensor setting frames
-    //TODO try to understand the better way to implement this!
+    //bool iNEMO_Set_Gyro_Parameter( GyroParams param,  );
     // <<<<< Sensor setting frames
 
     // >>>>> Acquisition sensor data frames
     bool iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool raw, bool acc,
-                                bool gyro, bool mag, bool press, bool temp,
-                                bool continousMode, DataFreq freq, uint16_t sampleCount );
+                               bool gyro, bool mag, bool press, bool temp,
+                               bool continousMode, DataFreq freq, uint16_t sampleCount );
     bool iNEMO_Get_Output_Mode( bool& ahrs, bool& compass, bool& raw, bool& acc,
                                 bool& gyro, bool &mag, bool &press, bool& temp,
                                 bool& continousMode, DataFreq& freq, uint16_t& sampleCount );
@@ -173,9 +198,16 @@ private:
     float cast_and_swap_float( uint8_t* startAddr );
     int16_t cast_and_swap_int16( uint8_t* startAddr );
     int32_t cast_and_swap_int32( uint8_t* startAddr );
+    // <<<<< Conversion functions
+
+    /*!
+     * \brief loadParams load params from ROS param server
+     */
+    void loadParams();
 
 private:
     ros::NodeHandle m_nh;
+    ros::NodeHandle m_nhPriv;
 
     serial::Serial mSerial;
 

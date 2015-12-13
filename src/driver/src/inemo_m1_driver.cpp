@@ -22,6 +22,7 @@ namespace inemo
 bool CInemoDriver::mStopping = false;
 
 CInemoDriver::CInemoDriver()
+    : m_nhPriv("~")
 {
     // TODO: add parameters for serial port initialization!!!
 
@@ -40,6 +41,11 @@ CInemoDriver::CInemoDriver()
 }
 
 CInemoDriver::~CInemoDriver()
+{
+
+}
+
+void CInemoDriver::loadParams()
 {
 
 }
@@ -75,7 +81,6 @@ bool CInemoDriver::startIMU()
     }
 
     ROS_INFO_STREAM( "Serial port ready" );
-
 
     // >>>>> Disconnection to resolve previous bad stopping
     ROS_INFO_STREAM( "Trying to stop Data Acquisition to solve previously bad interruption of the node"  );
@@ -128,6 +133,8 @@ bool CInemoDriver::startIMU()
 
     if( iNEMO_Start_Acquisition() )
     {
+        iNEMO_Led_Control(true);
+
         //Thread start
         startThread();
 
@@ -143,6 +150,7 @@ bool CInemoDriver::stopIMU()
     {
         mStopped = true;
 
+        iNEMO_Led_Control(false);
         iNEMO_Disconnect();
     }
 }
@@ -847,6 +855,61 @@ bool CInemoDriver::iNEMO_Disconnect()
     return false;
 }
 
+bool CInemoDriver::iNEMO_Led_Control( bool enable )
+{
+    ROS_INFO_STREAM( "Sending 'iNEMO_Led_Control' frame to iNemo");
+
+    if(!mSerial.isOpen())
+    {
+        ROS_ERROR_STREAM( "Cannot connect, serial port non opened");
+        return false;
+    }
+
+    iNemoFrame frame;
+    frame.mControl = 0x20;
+    frame.mLenght = 0x02;
+    frame.mId = 0x08;
+    frame.mPayload[0] = enable?1:0;
+
+    if( sendSerialCmd( frame ) )
+    {
+        if( !mSerial.waitReadable() )
+        {
+            ROS_ERROR_STREAM( "IMU timeout controlling LED");
+            return false;
+        }
+
+        string reply = mSerial.read( mSerial.available() );
+
+        ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
+        for( int i=0; i< reply.size(); i++ )
+            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+
+        iNemoFrame replyFrame;
+        if( !processSerialData( reply, &replyFrame ) )
+            return false;
+
+        if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x01 && replyFrame.mId == 0x08 )
+        {
+            ROS_INFO_STREAM( "Received ACK: LED controlled");
+
+            return true;
+        }
+
+        if( replyFrame.mControl == 0xC0 )
+        {
+            uint8_t errorCode = replyFrame.mPayload[0];
+            ROS_ERROR_STREAM( "Received NACK: LED not connected. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            return false;
+        }
+
+        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        return false;
+    }
+
+    return false;
+}
+
 bool CInemoDriver::iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool raw, bool acc,
                                          bool gyro, bool mag, bool press, bool temp,
                                          bool continousMode, DataFreq freq, uint16_t sampleCount )
@@ -1115,18 +1178,19 @@ bool CInemoDriver::iNEMO_Stop_Acquisition()
 
                 ROS_INFO_STREAM( "Receiving last data to flush buffer...");
             }
-
-            if( replyFrame.mControl == 0xC0 )
+            else if( replyFrame.mControl == 0xC0 )
             {
                 uint8_t errorCode = replyFrame.mPayload[0];
                 ROS_ERROR_STREAM( "Received NACK: IMU acquisition not stopped. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
                 return false;
             }
-
-            ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+            else
+                ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         }
 
         ROS_INFO_STREAM( "Data acquisition stopped");
+
+        return true;
     }
 
     return false;
