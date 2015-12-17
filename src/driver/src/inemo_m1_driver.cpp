@@ -100,7 +100,7 @@ bool CInemoDriver::startIMU()
     // >>>>> Data Configuration
     // TODO Load IMU configuration from params
     bool ahrs = true;
-    bool compass = true;   // Compass algorithm always disabled
+    bool compass = true;
     bool raw = false;       // Data always calibrated
     bool acc = true;
     bool gyro = true;
@@ -404,7 +404,7 @@ void* CInemoDriver::run()
 
                 int available = mSerial.available();
                 string serialData = mSerial.read(available);
-                ROS_ERROR_STREAM( "Bytes available: " << available );
+                ROS_DEBUG_STREAM( "Bytes available: " << available );
 
 
                 iNemoFrame frame;
@@ -701,6 +701,11 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
 {
     int dataSize = serialData.size();
 
+    // NOTE: According to Communication Protocol payload cannot me bigger than 61 bytes,
+    //       but the version 2.5.0 does not transmit fragmented frames and payload
+    //       are actually bigger than 61 bytes. Modify this function for future FW version
+    //       that respects 61 bytes limitation.
+
     if( serialData.size()<3 || dataSize > 255 )
     {
         ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << serialData.size() << " bytes (min3 bytes)" );
@@ -723,7 +728,10 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
         return false;
     }
 
-    bool bit_4 = BIT_TEST( outFrame->mControl , 4 );
+    // NOTE: the following commented code must be enabled and modified if the FW supports fragmented
+    //       frames. Actually version 2.5.0 does not transmit fragmented frames!
+
+    /*bool bit_4 = BIT_TEST( outFrame->mControl , 4 );
 
     if( bit_4 ) // Multiframe
     {
@@ -787,7 +795,8 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
         }
 
     }
-    else if( outFrame->mLenght>1 ) // single frame
+    else */
+    if( outFrame->mLenght>1 ) // single frame
     {
         memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-3 );
     }
