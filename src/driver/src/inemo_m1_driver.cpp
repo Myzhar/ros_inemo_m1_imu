@@ -404,6 +404,8 @@ void* CInemoDriver::run()
 
                 int available = mSerial.available();
                 string serialData = mSerial.read(available);
+                ROS_ERROR_STREAM( "Bytes available: " << available );
+
 
                 iNemoFrame frame;
                 if( processSerialData( serialData, &frame ) )
@@ -697,9 +699,11 @@ void* CInemoDriver::run()
 
 bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
 {
-    if( serialData.size() <3 && serialData.size()>64 )
+    int dataSize = serialData.size();
+
+    if( serialData.size()<3 || dataSize > 255 )
     {
-        ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << serialData.size() << " bytes (max 64 bytes)" );
+        ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << serialData.size() << " bytes (min3 bytes)" );
         return false;
     }
 
@@ -785,7 +789,7 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
     }
     else if( outFrame->mLenght>1 ) // single frame
     {
-        memcpy( outFrame->mPayload, &serialData.data()[3], 61 );
+        memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-3 );
     }
 
     return true;
@@ -1051,10 +1055,10 @@ string CInemoDriver::iNEMO_Get_FW_Version()
         }
 
         ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
-        return false;
+        return fwStr;
     }
 
-    return false;
+    return fwStr;
 }
 
 bool CInemoDriver::iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool raw, bool acc,
