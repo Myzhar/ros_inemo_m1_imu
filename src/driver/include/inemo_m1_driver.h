@@ -25,7 +25,7 @@ typedef struct _iNemoFrame
     uint8_t mControl; ///< Control byte
     uint8_t mLenght;  ///< Size byte
     uint8_t mId;      ///< Message id
-    uint8_t mPayload[61];   ///< Frame payload
+    uint8_t mPayload[256];   ///< Frame payload, allows multi-frame fragmented data
 } iNemoFrame;
 
 /*!
@@ -38,11 +38,10 @@ typedef struct _iNemoFrame
  *
  * The class implements the protocol described in the document
  * "UM1744: STEVAL- MKI121V1 communication protocol" by ST.
- * The class is derived by QThread (Qt5). A thread is started to
- * process inertial data emitted asynchronously by the IMU after
- * the command "iNEMO_Acquisition_Data". The thread is stopped/paused
- * to configure the board and to process synchronous command
- * and reply messages
+ * A thread is started to process inertial data emitted asynchronously
+ * by the IMU after the command "iNEMO_Acquisition_Data".
+ * The thread is stopped/paused to reconfigure the board and to
+ * process synchronous command and reply messages.
  *
  */
 class CInemoDriver

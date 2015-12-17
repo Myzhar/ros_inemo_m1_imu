@@ -24,8 +24,6 @@ bool CInemoDriver::mStopping = false;
 CInemoDriver::CInemoDriver()
     : m_nhPriv("~")
 {
-    // TODO: add parameters for serial port initialization!!!
-
     // >>>>> Ctrl+C handling
     struct sigaction sigAct;
     memset( &sigAct, 0, sizeof(sigAct) );
@@ -95,18 +93,22 @@ bool CInemoDriver::startIMU()
     mPaused = false;
     mStopped = true;
 
+    string fwVer = iNEMO_Get_FW_Version();
+
+    ROS_INFO_STREAM( "Firmware version: " << fwVer );
+
     // >>>>> Data Configuration
     // TODO Load IMU configuration from params
     bool ahrs = true;
-    bool compass = false;
-    bool raw = false;
+    bool compass = true;   // Compass algorithm always disabled
+    bool raw = false;       // Data always calibrated
     bool acc = true;
     bool gyro = true;
     bool mag = true;
     bool press = true;
     bool temp = true;
-    bool continous = true;
-    DataFreq freq = freq_30_hz;
+    bool continous = true; // Always continous streaming
+    DataFreq freq = freq_50_hz;
     uint16_t samples = 0;
 
     iNEMO_Set_Output_Mode( ahrs, compass, raw, acc,
@@ -400,7 +402,8 @@ void* CInemoDriver::run()
                 ROS_DEBUG_STREAM( "---------------------------------" );
                 ROS_DEBUG_STREAM( "Reading from serial port");
 
-                string serialData = mSerial.read(mSerial.available());
+                int available = mSerial.available();
+                string serialData = mSerial.read(available);
 
                 iNemoFrame frame;
                 if( processSerialData( serialData, &frame ) )
@@ -409,9 +412,6 @@ void* CInemoDriver::run()
                     {
                         // >>>>> Control over size of data
                         int totByte = 3; // [Lenght][msg_id][counter 2 Byte]
-
-                        if( mAhrs )
-                            totByte += 28;
 
                         if( mAcc )
                             totByte += 6;
@@ -428,8 +428,11 @@ void* CInemoDriver::run()
                         if( mTemp )
                             totByte += 2;
 
+                        if( mAhrs )
+                            totByte += 28; // (12 bytes RPY + 16 bytes Quaternion)
+
                         if( mCompass )
-                            totByte += 16;
+                            totByte += 12; // 12 bytes, not 16 bytes as reported on the Communication Protocol document
 
                         if( frame.mLenght != totByte )
                         {
@@ -630,6 +633,24 @@ void* CInemoDriver::run()
                             // <<<<< Test
                         }
 
+                        float comR,comP,Head;
+
+                        if( mCompass )
+                        {
+                            // >>>>> Compass Roll Pitch Heading
+                            comR = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
+                            byteIndex+=4; // Next value
+
+                            comP = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
+                            byteIndex+=4; // Next value
+
+                            Head = cast_and_swap_float( &(frame.mPayload[byteIndex]) );
+                            byteIndex+=4; // Next value
+
+                            ROS_DEBUG_STREAM("Compass Roll, Pitch, Heading: " << comR << " " << comP << " " << Head );
+                            // <<<<< Roll Pitch Heading
+                        }
+
                         // >>>>> Message publishing
                         imuMsg.header = header;
                         rpyMsg.header = header;
@@ -678,7 +699,7 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
 {
     if( serialData.size() <3 && serialData.size()>64 )
     {
-        ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << serialData.size() << " bytes" );
+        ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << serialData.size() << " bytes (max 64 bytes)" );
         return false;
     }
 
@@ -686,22 +707,86 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
     outFrame->mLenght = (uint8_t)serialData.data()[1];
     outFrame->mId = (uint8_t)serialData.data()[2];
 
-    if(outFrame->mLenght > 61)
-    {
-        ROS_ERROR_STREAM( "The 'lenght' byte is higher than 126. Value:" << (int)outFrame->mLenght );
-        return false;
-    }
-
-    if( outFrame->mLenght>1 )
-    {
-        memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-1 );
-    }
-
     ROS_DEBUG_STREAM( "Frame received:" );
     ROS_DEBUG_STREAM( "Control:      0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mControl << " - " << getFrameType( outFrame->mControl ) );
     ROS_DEBUG_STREAM( "Lenght:       0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mLenght );
     ROS_DEBUG_STREAM( "Message Id:   0x" << std::hex  << std::setfill ('0') << std::setw(2) << (unsigned short int)outFrame->mId << " - " << getMsgName( outFrame->mId ) );
     ROS_DEBUG_STREAM( "Payload size: " << outFrame->mLenght-1 );
+
+    if( outFrame->mLenght<1 || outFrame->mLenght>255 )
+    {
+        ROS_ERROR_STREAM( "Wrong frame lenght" );
+        return false;
+    }
+
+    bool bit_4 = BIT_TEST( outFrame->mControl , 4 );
+
+    if( bit_4 ) // Multiframe
+    {
+        ROS_DEBUG_STREAM( "Fragmented frame! Total lenght: " << (int)(outFrame->mLenght) << " bytes" );
+
+        int totFrame = std::ceil((double)(outFrame->mLenght)/61); // 61 is the max lenght of the single frame
+
+        // Copying the first part of the payload
+        memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-1 );
+
+        int remaining = (outFrame->mLenght-1)-61; // tot bytes of payload to be downloaded from next fragments
+
+
+        for( int i=1; i<totFrame; i++ ) // downloading remaining frames
+        {
+            if( !mSerial.waitReadable() )
+            {
+                ROS_ERROR_STREAM( "IMU timeout receiving fragmented frames");
+                return false;
+            }
+
+            int bytesAvailable = mSerial.available();
+            string reply = mSerial.read( bytesAvailable );
+
+            uint8_t control = (uint8_t)reply.data()[0];
+            if( control != outFrame->mControl )
+            {
+                ROS_ERROR_STREAM( "Fragment #" << i << " Control field (" << control
+                                  << ") different from first fragment (" << outFrame->mControl << ")"  );
+                return false;
+            }
+
+            uint8_t lenght = (uint8_t)reply.data()[1];
+            if( lenght != outFrame->mLenght )
+            {
+                ROS_ERROR_STREAM( "Fragment #" << i << " Lenght field different from first fragment" );
+                return false;
+            }
+
+            uint8_t id = (uint8_t)reply.data()[2];
+            if( id != outFrame->mId )
+            {
+                ROS_ERROR_STREAM( "Fragment #" << i << " ID field different from first fragment" );
+                return false;
+            }
+
+            bool bit_4 = BIT_TEST( control , 4 );
+
+            if( bit_4 ) // not last fragment
+            {
+                // Copying the i-th part of the payload
+                memcpy( &(outFrame->mPayload[61*i]), &reply.data()[3], 61 );
+
+                remaining -= 61;
+            }
+            else // Last fragment
+            {
+                // Copying the last part of the payload
+                memcpy( &(outFrame->mPayload[61*i]), &reply.data()[3], remaining );
+            }
+        }
+
+    }
+    else if( outFrame->mLenght>1 ) // single frame
+    {
+        memcpy( outFrame->mPayload, &serialData.data()[3], 61 );
+    }
 
     return true;
 }
@@ -718,8 +803,8 @@ bool CInemoDriver::sendSerialCmd( iNemoFrame &frame )
         memcpy( &mSerialBuf[3], frame.mPayload, frame.mLenght-1 );
 
     ROS_DEBUG_STREAM( "To be written " << dataSize << " bytes" );
-    for( int i=0; i<dataSize; i++ )
-        ROS_DEBUG_STREAM( "[" << i << "]" << std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)mSerialBuf[i] );
+    //    for( int i=0; i<dataSize; i++ )
+    //        ROS_DEBUG_STREAM( "[" << i << "]" << std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)mSerialBuf[i] );
 
     int written = mSerial.write( mSerialBuf, dataSize );
     if ( written != dataSize )
@@ -765,8 +850,8 @@ bool CInemoDriver::iNEMO_Connect()
         string reply = mSerial.read( mSerial.available() );
 
         ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
-        for( int i=0; i< reply.size(); i++ )
-            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+        //        for( int i=0; i< reply.size(); i++ )
+        //            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
 
         iNemoFrame replyFrame;
         if( !processSerialData( reply, &replyFrame ) )
@@ -826,8 +911,8 @@ bool CInemoDriver::iNEMO_Disconnect()
         string reply = mSerial.read( mSerial.available() );
 
         ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
-        for( int i=0; i< reply.size(); i++ )
-            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+        //        for( int i=0; i< reply.size(); i++ )
+        //            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
 
         iNemoFrame replyFrame;
         if( !processSerialData( reply, &replyFrame ) )
@@ -882,8 +967,8 @@ bool CInemoDriver::iNEMO_Led_Control( bool enable )
         string reply = mSerial.read( mSerial.available() );
 
         ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
-        for( int i=0; i< reply.size(); i++ )
-            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+        //        for( int i=0; i< reply.size(); i++ )
+        //            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
 
         iNemoFrame replyFrame;
         if( !processSerialData( reply, &replyFrame ) )
@@ -901,6 +986,68 @@ bool CInemoDriver::iNEMO_Led_Control( bool enable )
             uint8_t errorCode = replyFrame.mPayload[0];
             ROS_ERROR_STREAM( "Received NACK: LED not connected. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
             return false;
+        }
+
+        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        return false;
+    }
+
+    return false;
+}
+
+string CInemoDriver::iNEMO_Get_FW_Version()
+{
+    string fwStr("");
+
+    ROS_INFO_STREAM( "Sending 'iNEMO_Get_FW_Version' frame to iNemo");
+
+    if(!mSerial.isOpen())
+    {
+        ROS_ERROR_STREAM( "Cannot connect, serial port non opened");
+        return fwStr;
+    }
+
+    iNemoFrame frame;
+    frame.mControl = 0x20;
+    frame.mLenght = 0x01;
+    frame.mId = 0x13;
+
+    if( sendSerialCmd( frame ) )
+    {
+        if( !mSerial.waitReadable() )
+        {
+            ROS_ERROR_STREAM( "IMU timeout getting FW version");
+            return fwStr;
+        }
+
+        string reply = mSerial.read( mSerial.available() );
+
+        ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
+        //        for( int i=0; i< reply.size(); i++ )
+        //            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+
+        iNemoFrame replyFrame;
+        if( !processSerialData( reply, &replyFrame ) )
+            return fwStr;
+
+        if( replyFrame.mControl == 0x80 && replyFrame.mLenght>2 && replyFrame.mId == 0x13 )
+        {
+            ROS_INFO_STREAM( "Received ACK: FW correct");
+
+            //fwStr.resize( replyFrame.mLenght );
+
+            //memcpy( fwStr.data(), replyFrame.mPayload, replyFrame.mLenght );
+
+            fwStr.assign( (char*)replyFrame.mPayload );
+
+            return fwStr;
+        }
+
+        if( replyFrame.mControl == 0xC0 )
+        {
+            uint8_t errorCode = replyFrame.mPayload[0];
+            ROS_ERROR_STREAM( "Received NACK. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            return fwStr;
         }
 
         ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
@@ -974,8 +1121,8 @@ bool CInemoDriver::iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool raw, bool
         string reply = mSerial.read( mSerial.available() );
 
         ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
-        for( int i=0; i< reply.size(); i++ )
-            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+        //        for( int i=0; i< reply.size(); i++ )
+        //            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
 
         iNemoFrame replyFrame;
         if( !processSerialData( reply, &replyFrame ) )
@@ -1036,8 +1183,8 @@ bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, b
         string reply = mSerial.read( mSerial.available() );
 
         ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
-        for( int i=0; i< reply.size(); i++ )
-            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+        //        for( int i=0; i< reply.size(); i++ )
+        //            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
 
         iNemoFrame replyFrame;
         if( !processSerialData( reply, &replyFrame ) )
@@ -1045,7 +1192,7 @@ bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, b
 
         if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x05 && replyFrame.mId == 0x51 )
         {
-            ROS_INFO_STREAM( "Received ACK: IMU sensors is configured");
+            ROS_INFO_STREAM( "Received ACK: valid IMU sensors configuration");
 
             ahrs =      BIT_TEST(replyFrame.mPayload[0],7);
             compass =   BIT_TEST(replyFrame.mPayload[0],6);
@@ -1062,10 +1209,10 @@ bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, b
 
             sampleCount = replyFrame.mPayload[2] * 256 + replyFrame.mPayload[3];
 
-            ROS_DEBUG_STREAM( "byte 0: " << (bitset<8>) replyFrame.mPayload[0] );
-            ROS_DEBUG_STREAM( "byte 1: " << (bitset<8>) replyFrame.mPayload[1] );
-            ROS_DEBUG_STREAM( "byte 2: " << (bitset<8>) replyFrame.mPayload[2] );
-            ROS_DEBUG_STREAM( "byte 3: " << (bitset<8>) replyFrame.mPayload[3] );
+//            ROS_DEBUG_STREAM( "byte 0: " << (bitset<8>) replyFrame.mPayload[0] );
+//            ROS_DEBUG_STREAM( "byte 1: " << (bitset<8>) replyFrame.mPayload[1] );
+//            ROS_DEBUG_STREAM( "byte 2: " << (bitset<8>) replyFrame.mPayload[2] );
+//            ROS_DEBUG_STREAM( "byte 3: " << (bitset<8>) replyFrame.mPayload[3] );
 
             return true;
         }
@@ -1116,8 +1263,8 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
         string reply = mSerial.read( mSerial.available() );
 
         ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
-        for( int i=0; i< reply.size(); i++ )
-            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+        //        for( int i=0; i< reply.size(); i++ )
+        //            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
 
         iNemoFrame replyFrame;
         if( !processSerialData( reply, &replyFrame ) )
@@ -1166,8 +1313,8 @@ bool CInemoDriver::iNEMO_Stop_Acquisition()
             string reply = mSerial.read( mSerial.available() );
 
             ROS_DEBUG_STREAM( "Received " << reply.size() << "bytes" );
-            for( int i=0; i< reply.size(); i++ )
-                ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (short int)reply.at(i) );
+            //            for( int i=0; i< reply.size(); i++ )
+            //                ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (short int)reply.at(i) );
 
             iNemoFrame replyFrame;
             processSerialData( reply, &replyFrame );
@@ -1185,7 +1332,7 @@ bool CInemoDriver::iNEMO_Stop_Acquisition()
                 return false;
             }
             else
-                ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+                ROS_ERROR_STREAM( "Received wrong frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         }
 
         ROS_INFO_STREAM( "Data acquisition stopped");
