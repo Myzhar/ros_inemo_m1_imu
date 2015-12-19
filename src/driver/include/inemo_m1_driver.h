@@ -7,6 +7,9 @@
 #include <string>
 #include <pthread.h>
 #include <signal.h>
+#include <vector>
+
+#include "cmobilewinmean.h"
 
 using namespace std;
 
@@ -71,16 +74,16 @@ public:
 
     typedef enum _gyroParams
     {
-        data_rate = 0x00,
-        full_scale = 0x01,
+        gyro_data_rate = 0x00,
+        gyro_full_scale = 0x01,
         gyro_HPF = 0x02,
-        offset_X = 0x03,
-        offset_Y = 0x04,
-        offset_Z = 0x05,
-        scale_factor_X = 0x06,
-        scale_factor_Y = 0x07,
-        scale_factor_Z = 0x08,
-        sensor_name = 0xFF
+        gyro_offset_X = 0x03,
+        gyro_offset_Y = 0x04,
+        gyro_offset_Z = 0x05,
+        gyro_scale_factor_X = 0x06,
+        gyro_scale_factor_Y = 0x07,
+        gyro_scale_factor_Z = 0x08,
+        gyro_sensor_name = 0xFF
     } GyroParams;
 
     CInemoDriver();
@@ -132,7 +135,8 @@ protected:
     // <<<<< Board information frames
 
     // >>>>> Sensor setting frames
-    //bool iNEMO_Set_Gyro_Parameter( GyroParams param,  );
+    bool iNEMO_Set_Gyro_Offsets( int16_t offsetX, int16_t offsetY, int16_t offsetZ );
+
     // <<<<< Sensor setting frames
 
     // >>>>> Acquisition sensor data frames
@@ -196,6 +200,7 @@ private:
     // >>>>> Conversion functions
     float cast_and_swap_float( uint8_t* startAddr );
     int16_t cast_and_swap_int16( uint8_t* startAddr );
+    //void cast_and_swap_int16( int16_t val, uint8_t* outAddr );
     int32_t cast_and_swap_int32( uint8_t* startAddr );
     // <<<<< Conversion functions
 
@@ -216,12 +221,22 @@ private:
 
     bool mConnected; ///< indicates if \ref iNEMO_Connect() has been called
 
+    // >>>>> IMU calibration
+    bool mCalibActive; ///< indicates that the IMU is calibrating
+    vector<float> mGyroX_vec;
+    vector<float> mGyroY_vec;
+    vector<float> mGyroZ_vec;
+    float mGyroX_sum;
+    float mGyroY_sum;
+    float mGyroZ_sum;
+    // <<<<< IMU calibration
+
     bool mStopped; ///< Used to stop the serial processing
     bool mPaused; ///< Used to pause asynchronous data processing
 
     static bool mStopping; ///< Used to stop driver using Ctrl+C
 
-    uint64_t mNoDataCounter;
+    uint64_t mNoDataCounter; ///< Consecutive thread loops without data from IMU
 
     uint8_t mSerialBuf[BUFF_SIZE]; ///< Used to store bytes to be sent to serial port
 
@@ -238,12 +253,18 @@ private:
     DataFreq mFreq;
     uint16_t mSamples;
     // <<<<< Configuration
+
+    // >>>>> Outliers rejection
+    CMobileWinMean mFilterGyroX;
+    CMobileWinMean mFilterGyroY;
+    CMobileWinMean mFilterGyroZ;
+    CMobileWinMean mFilterAccX;
+    CMobileWinMean mFilterAccY;
+    CMobileWinMean mFilterAccZ;
+    // <<<<< Outliers rejection
     
     pthread_t mThreadId; // Thread Id
-    pthread_mutex_t mMutex;
-
-    // >>>>> ROS Publishers
-    // <<<<< ROS Publishers
+    //pthread_mutex_t mMutex; // Mutex
 };
 
 }

@@ -23,6 +23,12 @@ bool CInemoDriver::mStopping = false;
 
 CInemoDriver::CInemoDriver()
     : m_nhPriv("~")
+    , mFilterGyroX(5)
+    , mFilterGyroY(5)
+    , mFilterGyroZ(5)
+    , mFilterAccX(5)
+    , mFilterAccY(5)
+    , mFilterAccZ(5)
 {
     // >>>>> Ctrl+C handling
     struct sigaction sigAct;
@@ -36,6 +42,7 @@ CInemoDriver::CInemoDriver()
     mTimeout = 500;
 
     mConnected = false;
+    mCalibActive = false;
 }
 
 CInemoDriver::~CInemoDriver()
@@ -133,10 +140,11 @@ bool CInemoDriver::startIMU()
     ROS_INFO_STREAM( "Samples count is " << mSamples );
     // <<<<< Data Configuration
 
+    // Before starting the IMU we reset Gyro's offsets
+    iNEMO_Set_Gyro_Offsets( 0, 0, 0 );
+
     if( iNEMO_Start_Acquisition() )
     {
-        iNEMO_Led_Control(true);
-
         //Thread start
         startThread();
 
@@ -152,7 +160,6 @@ bool CInemoDriver::stopIMU()
     {
         mStopped = true;
 
-        iNEMO_Led_Control(false);
         iNEMO_Disconnect();
     }
 }
@@ -320,12 +327,11 @@ std::string CInemoDriver::getMsgName( uint8_t msgIdx )
 
 bool CInemoDriver::pauseIMU( bool paused )
 {
-    //QMutexLocker locker(&mMutex);
-    pthread_mutex_lock(&mMutex);
+    //pthread_mutex_lock(&mMutex);
 
     bool reply;
 
-    if(mPaused)
+    if(paused)
     {
         reply = iNEMO_Stop_Acquisition();
     }
@@ -337,7 +343,7 @@ bool CInemoDriver::pauseIMU( bool paused )
 
     mPaused = paused;
 
-    pthread_mutex_unlock(&mMutex);
+    //pthread_mutex_unlock(&mMutex);
     return mPaused;
 }
 
@@ -360,6 +366,14 @@ int16_t CInemoDriver::cast_and_swap_int16( uint8_t* startAddr )
     return swapped;
 }
 
+/*void cast_and_swap_int16( int16_t val, uint8_t* outAddr )
+{
+    uint16_t* cast = (uint16_t*)val; // Casting int16_t to uint16_t
+    int16_t swapped = (int16_t)bswap_16(*cast); // Swapping bytes and casting to int16_t
+
+    memcpy( outAddr, &swapped, sizeof(int16_t));
+}*/
+
 int32_t CInemoDriver::cast_and_swap_int32( uint8_t* startAddr )
 {
     uint32_t* cast = (uint32_t*)startAddr; // Casting uint8_t to uint32_t
@@ -374,16 +388,29 @@ void* CInemoDriver::run()
     mPaused = false;
     mNoDataCounter = 0;
 
+    // >>>>> Initial calibration
+    mCalibActive = true; // The first acquire data are used to calibrate the IMU
+    mGyroX_sum = 0.0f;
+    mGyroY_sum = 0.0f;
+    mGyroZ_sum = 0.0f;
+    // <<<<< Initial calibration
+
     ROS_INFO_STREAM( "IMU Data acquiring loop started");
 
+    // >>>>> ROS publishers
     static ros::Publisher imu_pub = m_nh.advertise<sensor_msgs::Imu>("imu_data", 10, false);
     static ros::Publisher mag_pub = m_nh.advertise<sensor_msgs::MagneticField>("inemo/mag", 10, false);
     static ros::Publisher rpy_pub = m_nh.advertise<geometry_msgs::Vector3Stamped>("inemo/rpy", 10, false);
     static ros::Publisher temp_pub = m_nh.advertise<sensor_msgs::Temperature>("inemo/temperature", 10, false);
     static ros::Publisher press_pub = m_nh.advertise<std_msgs::Float32>( "inemo/pressure", 10, false);
+    // <<<<< ROS publishers
 
+    // >>>>> Common message header
     std_msgs::Header header;
     ros::param::param<std::string>("~frame_id", header.frame_id, "imu_link");
+    // <<<<< Common message header
+
+    ROS_INFO_STREAM( "Starting calibration..." );
 
     while(!mStopped)
     {
@@ -406,41 +433,53 @@ void* CInemoDriver::run()
                 string serialData = mSerial.read(available);
                 ROS_DEBUG_STREAM( "Bytes available: " << available );
 
+                if( available != serialData.size() )
+                {
+                    ROS_ERROR_STREAM( "Received "<< serialData.size() << " bytes. Expected " << available << " bytes.");
+                    continue;
+                }
 
                 iNemoFrame frame;
                 if( processSerialData( serialData, &frame ) )
                 {
+                    if( available != (frame.mLenght+2) )
+                    {
+                        ROS_ERROR_STREAM( "Received "<< available << " bytes. Expected " << (unsigned short int)frame.mLenght+2 << " bytes.");
+                        continue;
+                    }
+
                     if( frame.mControl == 0x40 && frame.mLenght>3 && frame.mId == 0x52 )
                     {
                         // >>>>> Control over size of data
-                        int totByte = 3; // [Lenght][msg_id][counter 2 Byte]
+                        int totDataByte = 3; // [Lenght][msg_id][counter 2 Byte]
 
                         if( mAcc )
-                            totByte += 6;
+                            totDataByte += 6;
 
                         if( mGyro )
-                            totByte += 6;
+                            totDataByte += 6;
 
                         if( mMag )
-                            totByte += 6;
+                            totDataByte += 6;
 
                         if( mPress )
-                            totByte += 4;
+                            totDataByte += 4;
 
                         if( mTemp )
-                            totByte += 2;
+                            totDataByte += 2;
 
                         if( mAhrs )
-                            totByte += 28; // (12 bytes RPY + 16 bytes Quaternion)
+                            totDataByte += 28; // (12 bytes RPY + 16 bytes Quaternion)
 
                         if( mCompass )
-                            totByte += 12; // 12 bytes, not 16 bytes as reported on the Communication Protocol document
+                            totDataByte += 12; // 12 bytes, not 16 bytes as reported on the Communication Protocol document
 
-                        if( frame.mLenght != totByte )
+                        if( frame.mLenght != totDataByte )
                         {
-                            ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << (unsigned short int)frame.mLenght << " bytes, expected: " << totByte );
+                            ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << (unsigned short int)frame.mLenght << " bytes, expected: " << totDataByte );
                             continue;
                         }
+
                         // <<<<< Control over size of data
 
                         sensor_msgs::Imu imuMsg;
@@ -465,19 +504,19 @@ void* CInemoDriver::run()
 
                             int16_t valX = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             accX_g = (float)valX / 1000.0;
-                            accX = accX_g*g;
+                            accX = mFilterAccX.addValue(accX_g*g);
 
                             byteIndex+=2; // Next value
 
                             int16_t valY = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             accY_g = (float)valY / 1000.0;
-                            accY = accY_g*g;
+                            accY = mFilterAccY.addValue(accY_g*g);
 
                             byteIndex+=2; // Next value
 
                             int16_t valZ = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             accZ_g = (float)valZ / 1000.0;
-                            accZ = accZ_g*g;
+                            accZ = mFilterAccZ.addValue(accZ_g*g);
 
                             byteIndex+=2; // Next value
 
@@ -497,19 +536,19 @@ void* CInemoDriver::run()
 
                             int16_t valX = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             gyroX_deg = (float)valX;
-                            gyroX = gyroX_deg*DEG2RAD;
+                            gyroX = mFilterGyroX.addValue(gyroX_deg*DEG2RAD);
 
                             byteIndex+=2; // Next value
 
                             int16_t valY = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             gyroY_deg = (float)valY;
-                            gyroY = gyroY_deg*DEG2RAD;
+                            gyroY = mFilterGyroY.addValue(gyroY_deg*DEG2RAD);
 
                             byteIndex+=2; // Next value
 
                             int16_t valZ = cast_and_swap_int16( &(frame.mPayload[byteIndex]) );
                             gyroZ_deg = (float)valZ;
-                            gyroZ = gyroZ_deg*DEG2RAD;
+                            gyroZ = mFilterGyroZ.addValue(gyroZ_deg*DEG2RAD);
 
                             byteIndex+=2; // Next value
 
@@ -518,6 +557,19 @@ void* CInemoDriver::run()
                             imuMsg.angular_velocity.x = gyroX;
                             imuMsg.angular_velocity.y = gyroY;
                             imuMsg.angular_velocity.z = gyroZ;
+
+                            if( mCalibActive )
+                            {
+                                mGyroX_vec.push_back( gyroX_deg );
+                                mGyroY_vec.push_back( gyroY_deg );
+                                mGyroZ_vec.push_back( gyroZ_deg );
+
+                                mGyroX_sum += gyroX_deg;
+                                mGyroY_sum += gyroY_deg;
+                                mGyroZ_sum += gyroZ_deg;
+
+
+                            }
 
                             // TODO add covariance matrix using data from sensor datasheet
                         }
@@ -654,26 +706,57 @@ void* CInemoDriver::run()
                         }
 
                         // >>>>> Message publishing
-                        imuMsg.header = header;
-                        rpyMsg.header = header;
-                        magFieldMsg.header = header;
-                        tempMsg.header = header;
-                        //pressMsg.header = header;
+                        if(mCalibActive)
+                        {
+                            if( mGyroX_vec.size() == 500 ) // Calibration finished
+                            {
+                                ROS_INFO_STREAM( "Initial calibration complete" );
 
-                        if(imu_pub.getNumSubscribers() > 0)
-                            imu_pub.publish( imuMsg );
+                                float meanGyroX = round(mGyroX_sum/mGyroX_vec.size());
+                                float meanGyroY = round(mGyroY_sum/mGyroY_vec.size());
+                                float meanGyroZ = round(mGyroZ_sum/mGyroZ_vec.size());
 
-                        if(rpy_pub.getNumSubscribers() > 0)
-                            rpy_pub.publish( rpyMsg );
+                                int16_t offsetX = (int16_t)(meanGyroX);
+                                int16_t offsetY = (int16_t)(meanGyroY);
+                                int16_t offsetZ = (int16_t)(meanGyroZ);
 
-                        if( mag_pub.getNumSubscribers() > 0)
-                            mag_pub.publish( magFieldMsg );
+                                ROS_INFO_STREAM( "Gyro offsets (dps): " << offsetX << ", " << offsetY << ", " << offsetZ );
 
-                        if( temp_pub.getNumSubscribers() > 0 )
-                            temp_pub.publish( tempMsg );
+                                // >>>>> Sending offsets to IMU
+                                if( pauseIMU( true ) )
+                                {
+                                    iNEMO_Set_Gyro_Offsets( -offsetX, -offsetY, -offsetZ );
+                                    //iNEMO_Set_Gyro_Offsets( 0, 1, 0 );
+                                    pauseIMU( false );
+                                }
+                                // <<<<< Sending offsets to IMU
 
-                        if( press_pub.getNumSubscribers() > 0 )
-                            press_pub.publish( pressMsg );
+                                mCalibActive = false;
+                            }
+                        }
+                        else
+                        {
+                            imuMsg.header = header;
+                            rpyMsg.header = header;
+                            magFieldMsg.header = header;
+                            tempMsg.header = header;
+                            //pressMsg.header = header;
+
+                            if(imu_pub.getNumSubscribers() > 0)
+                                imu_pub.publish( imuMsg );
+
+                            if(rpy_pub.getNumSubscribers() > 0)
+                                rpy_pub.publish( rpyMsg );
+
+                            if( mag_pub.getNumSubscribers() > 0)
+                                mag_pub.publish( magFieldMsg );
+
+                            if( temp_pub.getNumSubscribers() > 0 )
+                                temp_pub.publish( tempMsg );
+
+                            if( press_pub.getNumSubscribers() > 0 )
+                                press_pub.publish( pressMsg );
+                        }
                         // <<<<< Message publishing
                     }
                 }
@@ -796,7 +879,7 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
 
     }
     else */
-    if( outFrame->mLenght>1 ) // single frame
+    if( outFrame->mLenght>2 && outFrame->mPayload>0 ) // single frame
     {
         memcpy( outFrame->mPayload, &serialData.data()[3], outFrame->mLenght-3 );
     }
@@ -1222,10 +1305,10 @@ bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, b
 
             sampleCount = replyFrame.mPayload[2] * 256 + replyFrame.mPayload[3];
 
-//            ROS_DEBUG_STREAM( "byte 0: " << (bitset<8>) replyFrame.mPayload[0] );
-//            ROS_DEBUG_STREAM( "byte 1: " << (bitset<8>) replyFrame.mPayload[1] );
-//            ROS_DEBUG_STREAM( "byte 2: " << (bitset<8>) replyFrame.mPayload[2] );
-//            ROS_DEBUG_STREAM( "byte 3: " << (bitset<8>) replyFrame.mPayload[3] );
+            //            ROS_DEBUG_STREAM( "byte 0: " << (bitset<8>) replyFrame.mPayload[0] );
+            //            ROS_DEBUG_STREAM( "byte 1: " << (bitset<8>) replyFrame.mPayload[1] );
+            //            ROS_DEBUG_STREAM( "byte 2: " << (bitset<8>) replyFrame.mPayload[2] );
+            //            ROS_DEBUG_STREAM( "byte 3: " << (bitset<8>) replyFrame.mPayload[3] );
 
             return true;
         }
@@ -1242,6 +1325,96 @@ bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, b
     }
 
     return false;
+}
+
+bool CInemoDriver::iNEMO_Set_Gyro_Offsets(int16_t offsetX, int16_t offsetY, int16_t offsetZ )
+{
+    ROS_INFO_STREAM( "Gyro OFFSETS configuration");
+
+    for( int i=0; i<3; i++ )
+    {
+        ROS_INFO_STREAM( "Sending 'iNEMO_Set_Sensor_Parameter' frame to iNemo");
+
+        if(!mSerial.isOpen())
+        {
+            ROS_ERROR_STREAM( "Cannot send command, serial port non opened");
+            return false;
+        }
+
+        if( !mStopped && !mPaused )
+        {
+            ROS_ERROR_STREAM( "IMU acquisition must be stopped or paused before changing configuration");
+            return false;
+        }
+
+        iNemoFrame frame;
+        frame.mControl = 0x20;
+        frame.mLenght = 0x05;
+        frame.mId = 0x20;
+        frame.mPayload[0] = gyro; // Sensor type
+
+        if( i==0 )
+        {
+            frame.mPayload[1] = gyro_offset_X; // Sensor param
+
+            frame.mPayload[2] = (uint8_t)((offsetX & 0xFF00) >> 8);
+            frame.mPayload[3] = (uint8_t)(offsetX & 0x00FF);
+        }
+        else if( i==1 )
+        {
+            frame.mPayload[1] = gyro_offset_Y; // Sensor param
+
+            frame.mPayload[2] = (uint8_t)((offsetY & 0xFF00) >> 8);
+            frame.mPayload[3] = (uint8_t)(offsetY & 0x00FF);
+        }
+        else if( i==2 )
+        {
+            frame.mPayload[1] = gyro_offset_Z; // Sensor param
+
+            frame.mPayload[2] = (uint8_t)((offsetZ & 0xFF00) >> 8);
+            frame.mPayload[3] = (uint8_t)(offsetZ & 0x00FF);
+        }
+
+        if( sendSerialCmd( frame ) )
+        {
+            if( !mSerial.waitReadable() )
+            {
+                ROS_ERROR_STREAM( "IMU timeout on iNEMO_Set_Sensor_Parameter frame");
+                return false;
+            }
+
+            string reply = mSerial.read( mSerial.available() );
+
+            ROS_DEBUG_STREAM( "Received " << reply.size() << " bytes" );
+            //        for( int i=0; i< reply.size(); i++ )
+            //            ROS_DEBUG_STREAM( "[" << i << "]"<< std::hex << " 0x" << std::setfill ('0') << std::setw(2) << (unsigned short int)reply.at(i) );
+
+            iNemoFrame replyFrame;
+            if( !processSerialData( reply, &replyFrame ) )
+                return false;
+
+            if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x01 && replyFrame.mId == 0x20 )
+            {
+                ROS_INFO_STREAM( "Received ACK: IMU sensors configured");
+
+                continue;
+            }
+
+            if( replyFrame.mControl == 0xC0 )
+            {
+                uint8_t errorCode = replyFrame.mPayload[0];
+                ROS_ERROR_STREAM( "Received NACK: IMU sensors configured. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+                return false;
+            }
+
+            ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+            return false;
+        }
+
+        return false;
+    }
+
+    return true;
 }
 
 bool CInemoDriver::iNEMO_Start_Acquisition()
@@ -1286,6 +1459,8 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
         if( replyFrame.mControl == 0x80 && replyFrame.mLenght==0x01 && replyFrame.mId == 0x52 )
         {
             ROS_INFO_STREAM( "Received ACK: IMU acquisition started");
+
+            iNEMO_Led_Control(true);
 
             return true;
         }
@@ -1349,6 +1524,8 @@ bool CInemoDriver::iNEMO_Stop_Acquisition()
         }
 
         ROS_INFO_STREAM( "Data acquisition stopped");
+
+        iNEMO_Led_Control(false);
 
         return true;
     }
