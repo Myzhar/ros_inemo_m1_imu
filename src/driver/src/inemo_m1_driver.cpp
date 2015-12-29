@@ -52,12 +52,16 @@ CInemoDriver::~CInemoDriver()
 
 void CInemoDriver::loadParams()
 {
-    int freq = 50;
+    ROS_INFO_STREAM( "Loading parameters from server" );
+
+    int freq = 100;
     if( !m_nhPriv.getParam( "data_freq", freq ) )
     {
         m_nhPriv.setParam( "data_freq", freq );
         ROS_INFO_STREAM( "data_freq" << " not present. Default value set: " << freq );
     }
+    else
+        ROS_DEBUG_STREAM( "data_freq" << freq );
 
     switch( freq )
     {
@@ -94,58 +98,71 @@ void CInemoDriver::loadParams()
         m_nhPriv.setParam( "ahrs_enabled", enabled );
         ROS_INFO_STREAM( "ahrs_enabled" << " not present. Default value set: " << enabled );
     }
+    else
+        ROS_DEBUG_STREAM( "ahrs_enabled " << enabled );
     mAhrs = enabled;
 
-    bool enabled = false;
+    enabled = false;
     if( !m_nhPriv.getParam( "compass_enabled", enabled ) )
     {
         m_nhPriv.setParam( "compass_enabled", enabled );
         ROS_INFO_STREAM( "compass_enabled" << " not present. Default value set: " << enabled );
     }
+    else
+        ROS_DEBUG_STREAM( "compass_enabled " << enabled );
     mCompass = enabled;
 
-    bool enabled = true;
+    enabled = true;
     if( !m_nhPriv.getParam( "accel_enabled", enabled ) )
     {
         m_nhPriv.setParam( "accel_enabled", enabled );
         ROS_INFO_STREAM( "accel_enabled" << " not present. Default value set: " << enabled );
     }
+    else
+        ROS_DEBUG_STREAM( "accel_enabled " << enabled );
     mAcc = enabled;
 
-    bool enabled = true;
+    enabled = true;
     if( !m_nhPriv.getParam( "gyro_enabled", enabled ) )
     {
         m_nhPriv.setParam( "gyro_enabled", enabled );
         ROS_INFO_STREAM( "gyro_enabled" << " not present. Default value set: " << enabled );
     }
+    else
+        ROS_DEBUG_STREAM( "gyro_enabled " << enabled );
     mGyro = enabled;
 
-    bool enabled = true;
+    enabled = true;
     if( !m_nhPriv.getParam( "magn_enabled", enabled ) )
     {
         m_nhPriv.setParam( "magn_enabled", enabled );
         ROS_INFO_STREAM( "magn_enabled" << " not present. Default value set: " << enabled );
     }
+    else
+        ROS_DEBUG_STREAM( "magn_enabled " << enabled );
     mMag = enabled;
 
-    bool enabled = false;
+    enabled = false;
     if( !m_nhPriv.getParam( "press_enabled", enabled ) )
     {
         m_nhPriv.setParam( "press_enabled", enabled );
         ROS_INFO_STREAM( "press_enabled" << " not present. Default value set: " << enabled );
     }
+    else
+        ROS_DEBUG_STREAM( "press_enabled " << enabled );
     mPress = enabled;
 
-    bool enabled = true;
+    enabled = true;
     if( !m_nhPriv.getParam( "temp_enabled", enabled ) )
     {
         m_nhPriv.setParam( "temp_enabled", enabled );
         ROS_INFO_STREAM( "temp_enabled" << " not present. Default value set: " << enabled );
     }
+    else
+        ROS_DEBUG_STREAM( "temp_enabled " << enabled );
     mTemp = enabled;
 
-
-
+    ROS_INFO_STREAM( "Parameters loaded" );
 }
 
 bool CInemoDriver::startIMU()
@@ -214,9 +231,9 @@ bool CInemoDriver::startIMU()
     bool continous = true; // Always continous streaming
     uint16_t samples = 0;
 
-    iNEMO_Set_Output_Mode( ahrs, compass, raw, acc,
-                           gyro, mag, press, temp,
-                           continous, freq, samples );
+    iNEMO_Set_Output_Mode( mAhrs, mCompass, raw, mAcc,
+                           mGyro, mMag, mPress, mTemp,
+                           continous, mFreq, samples );
 
     iNEMO_Get_Output_Mode( mAhrs, mCompass, mRaw, mAcc,
                            mGyro, mMag, mPress, mTemp,
