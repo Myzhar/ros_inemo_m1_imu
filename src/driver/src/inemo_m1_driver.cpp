@@ -162,6 +162,96 @@ void CInemoDriver::loadParams()
         ROS_DEBUG_STREAM( "temp_enabled " << enabled );
     mTemp = enabled;
 
+    float sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "accel_variance_x", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "accel_variance_x", sigma_sq );
+        ROS_INFO_STREAM( "accel_variance_x" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "accel_variance_x " << sigma_sq );
+    mAccelVarX = sigma_sq;
+
+    sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "accel_variance_y", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "accel_variance_y", sigma_sq );
+        ROS_INFO_STREAM( "accel_variance_y" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "accel_variance_y " << sigma_sq );
+    mAccelVarY = sigma_sq;
+
+    sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "accel_variance_z", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "accel_variance_z", sigma_sq );
+        ROS_INFO_STREAM( "accel_variance_z" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "accel_variance_z " << sigma_sq );
+    mAccelVarZ = sigma_sq;
+
+    sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "gyro_variance_x", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "gyro_variance_x", sigma_sq );
+        ROS_INFO_STREAM( "gyro_variance_x" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "gyro_variance_x " << sigma_sq );
+    mGyroVarX = sigma_sq;
+
+    sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "gyro_variance_y", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "gyro_variance_y", sigma_sq );
+        ROS_INFO_STREAM( "gyro_variance_y" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "gyro_variance_y " << sigma_sq );
+    mGyroVarY = sigma_sq;
+
+    sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "gyro_variance_z", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "gyro_variance_z", sigma_sq );
+        ROS_INFO_STREAM( "gyro_variance_z" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "gyro_variance_z " << sigma_sq );
+    mGyroVarZ = sigma_sq;
+
+    sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "roll_variance", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "roll_variance", sigma_sq );
+        ROS_INFO_STREAM( "roll_variance" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "roll_variance " << sigma_sq );
+    mRollVar = sigma_sq;
+
+    sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "pitch_variance", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "pitch_variance", sigma_sq );
+        ROS_INFO_STREAM( "pitch_variance" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "pitch_variance " << sigma_sq );
+    mPitchVar = sigma_sq;
+
+    sigma_sq = 0.01;
+    if( !m_nhPriv.getParam( "yaw_variance", sigma_sq ) )
+    {
+        m_nhPriv.setParam( "yaw_variance", sigma_sq );
+        ROS_INFO_STREAM( "yaw_variance" << " not present. Default value set: " << sigma_sq );
+    }
+    else
+        ROS_DEBUG_STREAM( "yaw_variance " << sigma_sq );
+    mYawVar = sigma_sq;
+
     ROS_INFO_STREAM( "Parameters loaded" );
 }
 
@@ -518,10 +608,32 @@ void* CInemoDriver::run()
     static ros::Publisher press_pub = m_nh.advertise<std_msgs::Float32>( "inemo/pressure", 10, false);
     // <<<<< ROS publishers
 
+    // >>>>> Messages
+    sensor_msgs::Imu imuMsg;
+    sensor_msgs::Temperature tempMsg;
+    sensor_msgs::MagneticField magFieldMsg;
+    geometry_msgs::Vector3Stamped rpyMsg;
+    std_msgs::Float32 pressMsg;
+    // <<<<< Messages
+
     // >>>>> Common message header
     std_msgs::Header header;
     ros::param::param<std::string>("~frame_id", header.frame_id, "imu_link");
     // <<<<< Common message header
+
+    // >>>>> Covariance Matrixes
+    imuMsg.linear_acceleration_covariance[0] = mAccelVarX;
+    imuMsg.linear_acceleration_covariance[4] = mAccelVarY;
+    imuMsg.linear_acceleration_covariance[8] = mAccelVarZ;
+
+    imuMsg.angular_velocity_covariance[0] = mGyroVarX;
+    imuMsg.angular_velocity_covariance[4] = mGyroVarY;
+    imuMsg.angular_velocity_covariance[8] = mGyroVarZ;
+
+    imuMsg.orientation_covariance[0] = mRollVar;
+    imuMsg.orientation_covariance[4] = mPitchVar;
+    imuMsg.orientation_covariance[8] = mYawVar;
+    // <<<<< Covariance Matrixes
 
     ROS_INFO_STREAM( "Starting calibration..." );
 
@@ -594,12 +706,6 @@ void* CInemoDriver::run()
                         }
 
                         // <<<<< Control over size of data
-
-                        sensor_msgs::Imu imuMsg;
-                        sensor_msgs::Temperature tempMsg;
-                        sensor_msgs::MagneticField magFieldMsg;
-                        geometry_msgs::Vector3Stamped rpyMsg;
-                        std_msgs::Float32 pressMsg;
 
                         header.stamp = ros::Time::now();
 

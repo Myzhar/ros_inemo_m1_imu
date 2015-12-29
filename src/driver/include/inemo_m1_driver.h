@@ -252,6 +252,16 @@ private:
     bool mContinous;
     DataFreq mFreq;
     uint16_t mSamples;
+
+    double mAccelVarX;
+    double mAccelVarY;
+    double mAccelVarZ;
+    double mGyroVarX;
+    double mGyroVarY;
+    double mGyroVarZ;
+    double mRollVar;
+    double mPitchVar;
+    double mYawVar;
     // <<<<< Configuration
 
     // >>>>> Outliers rejection
