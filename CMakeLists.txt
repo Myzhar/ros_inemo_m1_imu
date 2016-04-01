@@ -4,7 +4,7 @@ project(ros_inemo_m1_imu)
 
 #########################################################
 ## Options
-option( DEBUG_ACTIVE "Enable Debug build" ON )
+option( DEBUG_ACTIVE "Enable Debug build" OFF )
 
 if(DEBUG_ACTIVE)
     MESSAGE( "Debug compilation active" )

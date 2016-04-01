@@ -162,7 +162,7 @@ void CInemoDriver::loadParams()
         ROS_DEBUG_STREAM( "temp_enabled " << enabled );
     mTemp = enabled;
 
-    float sigma_sq = 0.01;
+    double sigma_sq = 0.01;
     if( !m_nhPriv.getParam( "accel_variance_x", sigma_sq ) )
     {
         m_nhPriv.setParam( "accel_variance_x", sigma_sq );
