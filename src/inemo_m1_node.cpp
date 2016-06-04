@@ -15,9 +15,10 @@ int main(int argc, char** argv)
   ROS_INFO_STREAM("    ST iNemo-M1 Discovery Node     \r");
   ROS_INFO_STREAM("-----------------------------------\r");
 
-  if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) ) {
+  /*if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Error) )
+  {
      ros::console::notifyLoggerLevelsChanged();
-  }
+  }*/
 
   if( !inemoDrv.startIMU() )
     return(EXIT_FAILURE);

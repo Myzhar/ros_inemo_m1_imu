@@ -277,7 +277,7 @@ bool CInemoDriver::startIMU()
     }
 
     if(mSerial.isOpen()){
-        ROS_INFO_STREAM("Serial Port initialized: " << mSerialPort );
+        ROS_INFO_STREAM("Serial Port correctly initialized: " << mSerialPort );
     }
     else
     {
@@ -660,7 +660,7 @@ void* CInemoDriver::run()
 
                 if( available != serialData.size() )
                 {
-                    ROS_ERROR_STREAM( "Received "<< serialData.size() << " bytes. Expected " << available << " bytes.");
+                    ROS_DEBUG_STREAM( "Received "<< serialData.size() << " bytes. Expected " << available << " bytes.");
                     continue;
                 }
 
@@ -669,7 +669,7 @@ void* CInemoDriver::run()
                 {
                     if( available != (frame.mLenght+2) )
                     {
-                        ROS_ERROR_STREAM( "Received "<< available << " bytes. Expected " << (unsigned short int)frame.mLenght+2 << " bytes.");
+                        ROS_DEBUG_STREAM( "Received "<< available << " bytes. Expected " << (unsigned short int)frame.mLenght+2 << " bytes.");
                         continue;
                     }
 
@@ -701,7 +701,7 @@ void* CInemoDriver::run()
 
                         if( frame.mLenght != totDataByte )
                         {
-                            ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << (unsigned short int)frame.mLenght << " bytes, expected: " << totDataByte );
+                            ROS_DEBUG_STREAM( "The size of the frame is not correct. Received " << (unsigned short int)frame.mLenght << " bytes, expected: " << totDataByte );
                             continue;
                         }
 
@@ -983,7 +983,7 @@ void* CInemoDriver::run()
             else
             {
                 mNoDataCounter++;
-                ROS_INFO_STREAM( "No IMU data since more than " << mNoDataCounter * mTimeout << " msec" );
+                ROS_WARN_STREAM( "No IMU data since more than " << mNoDataCounter * mTimeout << " msec" );
             }
         }
         else
@@ -1010,7 +1010,7 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
 
     if( serialData.size()<3 || dataSize > 255 )
     {
-        ROS_ERROR_STREAM( "The size of the frame is not correct. Received " << serialData.size() << " bytes (min3 bytes)" );
+        ROS_DEBUG_STREAM( "The size of the frame is not correct. Received " << serialData.size() << " bytes (min3 bytes)" );
         return false;
     }
 
@@ -1026,7 +1026,7 @@ bool CInemoDriver::processSerialData(string& serialData , iNemoFrame *outFrame)
 
     if( outFrame->mLenght<1 || outFrame->mLenght>255 )
     {
-        ROS_ERROR_STREAM( "Wrong frame lenght" );
+        ROS_DEBUG_STREAM( "Wrong frame lenght" );
         return false;
     }
 
@@ -1124,7 +1124,7 @@ bool CInemoDriver::sendSerialCmd( iNemoFrame &frame )
     int written = mSerial.write( mSerialBuf, dataSize );
     if ( written != dataSize )
     {
-        ROS_ERROR_STREAM( "Serial write error. Written " << written << " bytes instead of" << dataSize << " bytes.");
+        ROS_WARN_STREAM( "Serial write error. Written " << written << " bytes instead of" << dataSize << " bytes.");
         return false;
     }
 
@@ -1143,7 +1143,7 @@ bool CInemoDriver::iNEMO_Connect()
 
     if( mConnected )
     {
-        ROS_ERROR_STREAM( "Board is connected. Command ignored");
+        ROS_WARN_STREAM( "Board is connected. 'Connect' ommand ignored");
         return false;
     }
 
@@ -1187,7 +1187,7 @@ bool CInemoDriver::iNEMO_Connect()
             return false;
         }
 
-        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        ROS_WARN_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         return false;
     }
 
@@ -1204,7 +1204,7 @@ bool CInemoDriver::iNEMO_Disconnect()
 
     if(!mSerial.isOpen())
     {
-        ROS_ERROR_STREAM( "Cannot disconnect, serial port non opened");
+        ROS_WARN_STREAM( "Cannot disconnect, serial port non opened");
         return false;
     }
 
@@ -1219,7 +1219,7 @@ bool CInemoDriver::iNEMO_Disconnect()
     {
         if( !mSerial.waitReadable() )
         {
-            ROS_ERROR_STREAM( "IMU timeout disconnecting");
+            ROS_WARN_STREAM( "IMU timeout disconnecting");
             return false;
         }
 
@@ -1248,7 +1248,7 @@ bool CInemoDriver::iNEMO_Disconnect()
             return false;
         }
 
-        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        ROS_WARN_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         return false;
     }
 
@@ -1261,7 +1261,7 @@ bool CInemoDriver::iNEMO_Led_Control( bool enable )
 
     if(!mSerial.isOpen())
     {
-        ROS_ERROR_STREAM( "Cannot connect, serial port non opened");
+        ROS_ERROR_STREAM( "Cannot control LED, serial port non opened");
         return false;
     }
 
@@ -1275,7 +1275,7 @@ bool CInemoDriver::iNEMO_Led_Control( bool enable )
     {
         if( !mSerial.waitReadable() )
         {
-            ROS_ERROR_STREAM( "IMU timeout controlling LED");
+            ROS_WARN_STREAM( "IMU timeout controlling LED");
             return false;
         }
 
@@ -1299,11 +1299,11 @@ bool CInemoDriver::iNEMO_Led_Control( bool enable )
         if( replyFrame.mControl == 0xC0 )
         {
             uint8_t errorCode = replyFrame.mPayload[0];
-            ROS_ERROR_STREAM( "Received NACK: LED not connected. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            ROS_WARN_STREAM( "Received NACK: LED not controlled. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
             return false;
         }
 
-        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        ROS_WARN_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         return false;
     }
 
@@ -1318,7 +1318,7 @@ string CInemoDriver::iNEMO_Get_FW_Version()
 
     if(!mSerial.isOpen())
     {
-        ROS_ERROR_STREAM( "Cannot connect, serial port non opened");
+        ROS_ERROR_STREAM( "Cannot get FW version, serial port non opened");
         return fwStr;
     }
 
@@ -1331,7 +1331,7 @@ string CInemoDriver::iNEMO_Get_FW_Version()
     {
         if( !mSerial.waitReadable() )
         {
-            ROS_ERROR_STREAM( "IMU timeout getting FW version");
+            ROS_WARN_STREAM( "IMU timeout getting FW version");
             return fwStr;
         }
 
@@ -1361,11 +1361,11 @@ string CInemoDriver::iNEMO_Get_FW_Version()
         if( replyFrame.mControl == 0xC0 )
         {
             uint8_t errorCode = replyFrame.mPayload[0];
-            ROS_ERROR_STREAM( "Received NACK. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            ROS_WARN_STREAM( "Received NACK. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
             return fwStr;
         }
 
-        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        ROS_WARN_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         return fwStr;
     }
 
@@ -1380,7 +1380,7 @@ bool CInemoDriver::iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool raw, bool
 
     if(!mSerial.isOpen())
     {
-        ROS_ERROR_STREAM( "Cannot send command, serial port non opened");
+        ROS_ERROR_STREAM( "Cannot set output mode, serial port non opened");
         return false;
     }
 
@@ -1453,11 +1453,11 @@ bool CInemoDriver::iNEMO_Set_Output_Mode(bool ahrs, bool compass, bool raw, bool
         if( replyFrame.mControl == 0xC0 )
         {
             uint8_t errorCode = replyFrame.mPayload[0];
-            ROS_ERROR_STREAM( "Received NACK: IMU sensors configured. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            ROS_ERROR_STREAM( "Received NACK: IMU sensors not configured. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
             return false;
         }
 
-        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        ROS_WARN_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         return false;
     }
 
@@ -1472,7 +1472,7 @@ bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, b
 
     if(!mSerial.isOpen())
     {
-        ROS_ERROR_STREAM( "Cannot send command, serial port non opened");
+        ROS_ERROR_STREAM( "Cannot get output mode, serial port non opened");
         return false;
     }
 
@@ -1491,7 +1491,7 @@ bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, b
     {
         if( !mSerial.waitReadable() )
         {
-            ROS_ERROR_STREAM( "IMU timeout on iNEMO_Get_Output_Mode frame");
+            ROS_WARN_STREAM( "IMU timeout on iNEMO_Get_Output_Mode frame");
             return false;
         }
 
@@ -1535,11 +1535,11 @@ bool CInemoDriver::iNEMO_Get_Output_Mode(bool& ahrs, bool& compass, bool& raw, b
         if( replyFrame.mControl == 0xC0 )
         {
             uint8_t errorCode = replyFrame.mPayload[0];
-            ROS_ERROR_STREAM( "Received NACK: IMU sensors error. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
+            ROS_WARN_STREAM( "Received NACK: IMU sensors error. Error code: " << getMsgName(replyFrame.mId) << " - " << getErrorString( errorCode )  );
             return false;
         }
 
-        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        ROS_WARN_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         return false;
     }
 
@@ -1556,7 +1556,7 @@ bool CInemoDriver::iNEMO_Set_Gyro_Offsets(int16_t offsetX, int16_t offsetY, int1
 
         if(!mSerial.isOpen())
         {
-            ROS_ERROR_STREAM( "Cannot send command, serial port non opened");
+            ROS_ERROR_STREAM( "Cannot set IMU offsets, serial port non opened");
             return false;
         }
 
@@ -1626,7 +1626,7 @@ bool CInemoDriver::iNEMO_Set_Gyro_Offsets(int16_t offsetX, int16_t offsetY, int1
                 return false;
             }
 
-            ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+            ROS_WARN_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
             return false;
         }
 
@@ -1648,7 +1648,7 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
 
     if( !mStopped && !mPaused )
     {
-        ROS_ERROR_STREAM( "IMU acquisition must be stopped or paused before starting it again");
+        ROS_WARN_STREAM( "IMU acquisition must be stopped or paused before starting it again");
         return false;
     }
 
@@ -1691,7 +1691,7 @@ bool CInemoDriver::iNEMO_Start_Acquisition()
             return false;
         }
 
-        ROS_ERROR_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+        ROS_WARN_STREAM( "Received unknown frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         return false;
     }
 
@@ -1739,7 +1739,7 @@ bool CInemoDriver::iNEMO_Stop_Acquisition()
                 return false;
             }
             else
-                ROS_ERROR_STREAM( "Received wrong frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
+                ROS_WARN_STREAM( "Received wrong frame: " << std::hex << (int)reply.data()[0] << " " << std::hex << (int)reply.data()[1] << " "<< (int)reply.data()[2] << " "<< (int)reply.data()[3] << " "<< (int)reply.data()[4] );
         }
 
         ROS_INFO_STREAM( "Data acquisition stopped");
