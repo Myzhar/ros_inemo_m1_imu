@@ -23,10 +23,7 @@ int main(int argc, char** argv)
   if( !inemoDrv.startIMU() )
     return(EXIT_FAILURE);
 
-  while( ros::ok() )
-  {
-    ros::spinOnce();
-  }
+  ros::spin();
 
   ROS_INFO_STREAM("... stopped!");
 
